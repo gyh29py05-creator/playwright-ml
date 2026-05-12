@@ -448,7 +448,40 @@ app.post("/mercado", async (req, res) => {
     });
   }
 });
-
+// Endpoint que gera link meli.la oficial
+app.post('/mercado-oficial', async (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    const cookie = process.env.ML_COOKIE || '';
+    
+    const response = await fetch('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      body: JSON.stringify({
+        urls: [url],
+        tag: 'ragi6098412'
+      })
+    });
+    
+    const data = await response.json();
+    const shortUrl = data.urls?.[0]?.short_url;
+    
+    res.json({
+      status: 'ok',
+      url_original: url,
+      url_afiliado: shortUrl || url,
+      meli_la: shortUrl
+    });
+    
+  } catch (error) {
+    res.status(500).json({ erro: error.message });
+  }
+});
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
