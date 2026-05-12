@@ -1,115 +1,54 @@
-const express = require("express");
-const { chromium } = require("playwright");
-
-const app = express();
-
-app.use(express.json());
-
-app.get("/", (req, res) => {
-  res.send("Playwright API Running");
-});
-
-app.post("/abrir", async (req, res) => {
-
-  const { url } = req.body;
-
-  if (!url) {
-    return res.status(400).json({
-      status: "erro",
-      message: "URL não enviada"
-    });
-  }
-
-  const browser = await chromium.launch({
-    headless: true
-  });
-
-  const page = await browser.newPage();
-
-  try {
-
-    await page.goto(url);
-
-    const titulo = await page.title();
-
-    res.json({
-      status: "ok",
-      titulo
-    });
-
-  } catch (error) {
-
-    res.json({
-      status: "erro",
-      message: error.message
-    });
-
-  } finally {
-
-    await browser.close();
-
-  }
-
-});
-
-app.get("/login", async (req, res) => {
-
-  const context = await chromium.launchPersistentContext("./perfil-ml", {
-    headless: true
-  });
-
-  const page = await context.newPage();
-
-  await page.goto("https://www.mercadolivre.com.br");
-
-  await context.storageState({
-    path: "auth.json"
-  });
-
-  res.send("Sessão Mercado Livre criada");
-
-});
-
 app.post("/mercado", async (req, res) => {
 
-  const { url } = req.body;
-
-  const browser = await chromium.launch({
-    headless: true
-  });
-
-  const context = await browser.newContext({
-    storageState: "auth.json"
-  });
-
-  const page = await context.newPage();
-
   try {
 
-    await page.goto(url);
+    const { url } = req.body;
 
-    const titulo = await page.title();
+    const browser = await chromium.launch({
+      headless: true
+    });
+
+    const context = await browser.newContext({
+      storageState: "auth.json"
+    });
+
+    const page = await context.newPage();
+
+    const response = await page.evaluate(async ({ url }) => {
+
+      const result = await fetch(
+        "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            urls: [url],
+            tag: "ragi6098412"
+          }),
+          credentials: "include"
+        }
+      );
+
+      return await result.json();
+
+    }, { url });
+
+    await browser.close();
 
     res.json({
       status: "ok",
-      titulo
+      resultado: response
     });
 
   } catch (error) {
 
-    res.json({
+    res.status(500).json({
       status: "erro",
-      message: error.message
+      mensagem: error.message
     });
-
-  } finally {
-
-    await browser.close();
 
   }
 
-});
-
-app.listen(3000, () => {
-  console.log("Servidor rodando na porta 3000");
 });
