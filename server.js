@@ -10,6 +10,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/abrir", async (req, res) => {
+
   const { url } = req.body;
 
   if (!url) {
@@ -48,6 +49,21 @@ app.post("/abrir", async (req, res) => {
     await browser.close();
 
   }
+
+});
+
+app.get("/login", async (req, res) => {
+
+  const browser = await chromium.launch({
+    headless: false
+  });
+
+  const page = await browser.newPage();
+
+  await page.goto("https://www.mercadolivre.com.br");
+
+  res.send("Faça login manualmente no Mercado Livre");
+
 });
 
 app.listen(3000, () => {
