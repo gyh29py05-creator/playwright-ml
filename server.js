@@ -9,7 +9,7 @@ app.get("/", (req, res) => {
   res.send("Playwright API Running");
 });
 
-app.post("/login", async (req, res) => {
+app.get("/login", async (req, res) => {
 
   try {
 
