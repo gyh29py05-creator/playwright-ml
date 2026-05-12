@@ -55,10 +55,15 @@ app.post("/abrir", async (req, res) => {
 app.get("/login", async (req, res) => {
 
   const browser = await chromium.launch({
-    headless: false
+  headless: true
   });
 
   const page = await browser.newPage();
+  await page.goto("https://www.mercadolivre.com");
+
+await page.context().storageState({
+  path: "auth.json"
+});
 
   await page.goto("https://www.mercadolivre.com.br");
 
