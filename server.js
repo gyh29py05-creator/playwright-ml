@@ -55,19 +55,58 @@ app.post("/abrir", async (req, res) => {
 app.get("/login", async (req, res) => {
 
   const browser = await chromium.launch({
-  headless: true
+    headless: true
   });
 
   const page = await browser.newPage();
-  await page.goto("https://www.mercadolivre.com");
-
-await page.context().storageState({
-  path: "auth.json"
-});
 
   await page.goto("https://www.mercadolivre.com.br");
 
+  await page.context().storageState({
+    path: "auth.json"
+  });
+
   res.send("Faça login manualmente no Mercado Livre");
+
+});
+
+app.post("/mercado", async (req, res) => {
+
+  const { url } = req.body;
+
+  const browser = await chromium.launch({
+    headless: true
+  });
+
+  const context = await browser.newContext({
+    storageState: "auth.json"
+  });
+
+  const page = await context.newPage();
+
+  try {
+
+    await page.goto(url);
+
+    const titulo = await page.title();
+
+    res.json({
+      status: "ok",
+      titulo
+    });
+
+  } catch (error) {
+
+    res.json({
+      status: "erro",
+      message: error.message
+    });
+
+  } finally {
+
+    await browser.close();
+
+  }
 
 });
 
