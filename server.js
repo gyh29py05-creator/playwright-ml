@@ -1,43 +1,55 @@
-const express = require('express');
-const { chromium } = require('playwright');
+const express = require("express");
+const { chromium } = require("playwright");
 
 const app = express();
 
 app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.send('Playwright API Running');
+app.get("/", (req, res) => {
+  res.send("Playwright API Running");
 });
 
-app.post('/abrir', async (req, res) => {
+app.post("/abrir", async (req, res) => {
   const { url } = req.body;
 
-  try {
-    const browser = await chromium.launch({
-      headless: true
+  if (!url) {
+    return res.status(400).json({
+      status: "erro",
+      message: "URL não enviada"
     });
+  }
 
-    const page = await browser.newPage();
+  const browser = await chromium.launch({
+    headless: true
+  });
+
+  const page = await browser.newPage();
+
+  try {
 
     await page.goto(url);
 
-    const title = await page.title();
-
-    await browser.close();
+    const titulo = await page.title();
 
     res.json({
-      status: 'ok',
-      title
+      status: "ok",
+      titulo
     });
 
   } catch (error) {
+
     res.json({
-      status: 'erro',
+      status: "erro",
       message: error.message
     });
+
+  } finally {
+
+    await browser.close();
+
   }
 });
 
 app.listen(3000, () => {
-  console.log('Servidor rodando na porta 3000');
+  console.log("Servidor rodando na porta 3000");
 });
