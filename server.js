@@ -14,7 +14,7 @@ app.get("/login", async (req, res) => {
   try {
 
     const browser = await chromium.launch({
-      headless: false
+      headless: true
     });
 
     const context = await browser.newContext();
@@ -23,18 +23,15 @@ app.get("/login", async (req, res) => {
 
     await page.goto("https://www.mercadolivre.com.br");
 
-    res.send("Faça login manualmente no Mercado Livre");
+    await context.storageState({
+      path: "auth.json"
+    });
 
-    page.on("close", async () => {
+    await browser.close();
 
-      await context.storageState({
-        path: "auth.json"
-      });
-
-      await browser.close();
-
-      console.log("Sessão Mercado Livre criada");
-
+    res.json({
+      status: "ok",
+      mensagem: "Auth criado"
     });
 
   } catch (error) {
@@ -55,7 +52,7 @@ app.post("/mercado", async (req, res) => {
     const { url } = req.body;
 
     const browser = await chromium.launch({
-      headless: false
+      headless: true
     });
 
     const context = await browser.newContext({
