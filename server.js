@@ -12,165 +12,148 @@ const AUTH_FILE = path.join(__dirname, "auth.json");
 app.get("/", (req, res) => {
   res.json({
     status: "online",
-    mensagem: "Playwright API Running",
+    mensagem: "Playwright API Running - Gerador de Links de Afiliado ML",
     endpoints: {
-      login: "GET /login - Cria autenticação no ML",
       mercado: "POST /mercado - Gera link de afiliado",
-      status: "GET /status - Verifica se está autenticado"
+      mercado_simples: "POST /mercado-simples - Gera link sem playwright (mais rápido)"
     }
   });
 });
 
-// Verifica se está autenticado
-app.get("/status", (req, res) => {
-  const isAuthenticated = fs.existsSync(AUTH_FILE);
-  res.json({
-    status: "ok",
-    autenticado: isAuthenticated,
-    mensagem: isAuthenticated 
-      ? "Autenticação OK - Pode usar /mercado" 
-      : "Precisa fazer login primeiro - Acesse /login"
-  });
-});
-
-// Faz login no ML e salva cookies
-app.get("/login", async (req, res) => {
-  try {
-    console.log("🔄 Iniciando login no Mercado Livre...");
-    
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    });
-    
-    const page = await context.newPage();
-    
-    // Vai direto para a página de afiliados
-    await page.goto("https://www.mercadolivre.com.br/afiliados/linkbuilder#hub", {
-      waitUntil: "networkidle",
-      timeout: 30000
-    });
-    
-    // Espera um pouco para garantir que carregou
-    await page.waitForTimeout(3000);
-    
-    // Salva o estado de autenticação
-    await context.storageState({ path: AUTH_FILE });
-    
-    await browser.close();
-    
-    console.log("✅ Login realizado com sucesso!");
-    
-    res.json({
-      status: "ok",
-      mensagem: "Autenticação criada com sucesso! Agora você pode usar o endpoint /mercado"
-    });
-    
-  } catch (error) {
-    console.error("❌ Erro no login:", error.message);
-    res.status(500).json({
-      status: "erro",
-      mensagem: error.message,
-      dica: "Verifique se o Mercado Livre está acessível"
-    });
-  }
-});
-
-// Gera link de afiliado
-app.post("/mercado", async (req, res) => {
+// Versão SIMPLES - Apenas adiciona tracking_id (RECOMENDADO)
+app.post("/mercado-simples", async (req, res) => {
   try {
     const { url } = req.body;
     
-    // Validações
     if (!url) {
       return res.status(400).json({
         status: "erro",
         mensagem: "URL do produto não fornecida",
-        exemplo: { url: "https://produto.mercadolivre.com.br/MLB-123456-produto" }
-      });
-    }
-    
-    // Verifica se está autenticado
-    if (!fs.existsSync(AUTH_FILE)) {
-      return res.status(401).json({
-        status: "erro",
-        mensagem: "Não autenticado! Acesse /login primeiro"
-      });
-    }
-    
-    console.log("🔄 Gerando link de afiliado para:", url);
-    
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
-    const context = await browser.newContext({
-      storageState: AUTH_FILE,
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    });
-    
-    const page = await context.newPage();
-    
-    // Vai para a página de afiliados
-    await page.goto("https://www.mercadolivre.com.br/afiliados/linkbuilder#hub", {
-      waitUntil: "networkidle",
-      timeout: 30000
-    });
-    
-    // Faz a requisição para criar o link de afiliado
-    const response = await page.evaluate(async (productUrl) => {
-      try {
-        const result = await fetch(
-          "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              urls: [productUrl],
-              tag: "ragi6098412" // Seu tag de afiliado
-            })
-          }
-        );
-        
-        if (!result.ok) {
-          throw new Error(`HTTP ${result.status}: ${result.statusText}`);
+        exemplo: { 
+          url: "https://produto.mercadolivre.com.br/MLB-123456-produto" 
         }
-        
-        return await result.json();
-        
-      } catch (error) {
-        return { error: error.message };
-      }
-    }, url);
-    
-    await browser.close();
-    
-    // Verifica se deu erro
-    if (response.error) {
-      console.error("❌ Erro ao gerar link:", response.error);
-      return res.status(500).json({
-        status: "erro",
-        mensagem: response.error
       });
     }
     
-    console.log("✅ Link gerado com sucesso!");
+    // Validar se é URL do Mercado Livre
+    if (!url.includes("mercadolivre.com") && !url.includes("mercadolibre.com")) {
+      return res.status(400).json({
+        status: "erro",
+        mensagem: "URL inválida - deve ser do Mercado Livre"
+      });
+    }
+    
+    // Seu tracking_id de afiliado
+    const trackingId = "ragi6098412";
+    
+    // Adiciona o tracking_id na URL
+    const affiliateUrl = url.includes('?') 
+      ? `${url}&tracking_id=${trackingId}`
+      : `${url}?tracking_id=${trackingId}`;
+    
+    console.log("✅ Link de afiliado gerado:", affiliateUrl);
     
     res.json({
       status: "ok",
       url_original: url,
-      resultado: response
+      url_afiliado: affiliateUrl,
+      tracking_id: trackingId,
+      mensagem: "Link de afiliado gerado com sucesso!"
     });
     
   } catch (error) {
-    console.error("❌ Erro ao gerar link:", error.message);
+    console.error("❌ Erro:", error.message);
+    res.status(500).json({
+      status: "erro",
+      mensagem: error.message
+    });
+  }
+});
+
+// Versão com Playwright (se precisar encurtar depois)
+app.post("/mercado", async (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({
+        status: "erro",
+        mensagem: "URL do produto não fornecida"
+      });
+    }
+    
+    // Primeiro gera o link com tracking_id
+    const trackingId = "ragi6098412";
+    const affiliateUrl = url.includes('?') 
+      ? `${url}&tracking_id=${trackingId}`
+      : `${url}?tracking_id=${trackingId}`;
+    
+    console.log("🔄 Tentando encurtar:", affiliateUrl);
+    
+    // Tenta encurtar (opcional)
+    try {
+      const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      
+      // Vai para encurtador do ML
+      await page.goto("https://www.mercadolivre.com.br/afiliados/linkbuilder#hub", {
+        timeout: 15000
+      });
+      
+      // Tenta encurtar pela API
+      const shortened = await page.evaluate(async (longUrl, tag) => {
+        try {
+          const result = await fetch(
+            "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ urls: [longUrl], tag })
+            }
+          );
+          
+          if (result.ok) {
+            const data = await result.json();
+            return data;
+          }
+          return null;
+        } catch (e) {
+          return null;
+        }
+      }, url, trackingId);
+      
+      await browser.close();
+      
+      if (shortened && shortened.links && shortened.links[0]) {
+        console.log("✅ Link encurtado com sucesso!");
+        return res.json({
+          status: "ok",
+          url_original: url,
+          url_afiliado: affiliateUrl,
+          url_encurtada: shortened.links[0],
+          tracking_id: trackingId
+        });
+      }
+    } catch (e) {
+      console.log("⚠️ Não conseguiu encurtar, retornando link normal");
+    }
+    
+    // Se não conseguiu encurtar, retorna o link com tracking_id
+    res.json({
+      status: "ok",
+      url_original: url,
+      url_afiliado: affiliateUrl,
+      tracking_id: trackingId,
+      mensagem: "Link gerado (não encurtado)"
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro:", error.message);
     res.status(500).json({
       status: "erro",
       mensagem: error.message
