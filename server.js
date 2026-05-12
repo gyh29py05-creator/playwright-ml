@@ -54,19 +54,19 @@ app.post("/abrir", async (req, res) => {
 
 app.get("/login", async (req, res) => {
 
-  const browser = await chromium.launch({
+  const context = await chromium.launchPersistentContext("./perfil-ml", {
     headless: true
   });
 
-  const page = await browser.newPage();
+  const page = await context.newPage();
 
   await page.goto("https://www.mercadolivre.com.br");
 
-  await page.context().storageState({
+  await context.storageState({
     path: "auth.json"
   });
 
-  res.send("Faça login manualmente no Mercado Livre");
+  res.send("Sessão Mercado Livre criada");
 
 });
 
