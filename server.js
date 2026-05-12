@@ -39,76 +39,136 @@ app.get("/ofertas", async (req, res) => {
     
     const browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled'
+      ]
     });
     
-    const page = await browser.newPage();
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR'
+    });
+    
+    const page = await context.newPage();
     
     // Vai para a página de ofertas
+    console.log("📄 Acessando página de ofertas...");
     await page.goto("https://www.mercadolivre.com.br/ofertas", {
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
       timeout: 30000
     });
     
-    console.log("📄 Página carregada, extraindo produtos...");
+    // Aguarda a página carregar
+    await page.waitForTimeout(3000);
     
-    // Extrai os produtos da página
+    // Faz scroll para carregar produtos lazy-load
+    console.log("📜 Fazendo scroll na página...");
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight / 2);
+    });
+    await page.waitForTimeout(2000);
+    
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+    await page.waitForTimeout(2000);
+    
+    console.log("🔍 Extraindo produtos...");
+    
+    // Extrai os produtos
     const produtos = await page.evaluate(() => {
       const items = [];
       
-      // Seleciona todos os cards de produtos
-      const selectors = [
+      // Tenta vários seletores diferentes
+      const possiveisSeletores = [
+        'article',
+        'div[class*="ui-search-result"]',
+        'li[class*="ui-search-layout__item"]',
         'div.poly-card',
+        'div[class*="poly-component"]',
         'li.poly-component__item',
-        'div[class*="promotion-item"]',
-        'a.poly-component__link'
+        'div[class*="promotion-item"]'
       ];
       
-      let cards = [];
-      for (const selector of selectors) {
-        cards = document.querySelectorAll(selector);
+      let todosCards = [];
+      
+      for (const seletor of possiveisSeletores) {
+        const cards = Array.from(document.querySelectorAll(seletor));
         if (cards.length > 0) {
-          console.log(`Encontrou ${cards.length} produtos com seletor: ${selector}`);
+          console.log(`✓ Encontrados ${cards.length} elementos com: ${seletor}`);
+          todosCards = cards;
           break;
         }
       }
       
-      cards.forEach((card, index) => {
+      console.log(`Total de cards encontrados: ${todosCards.length}`);
+      
+      todosCards.forEach((card, index) => {
         try {
-          // Tenta extrair o título
-          const tituloElement = card.querySelector('h2, h3, [class*="title"], .poly-component__title');
-          const titulo = tituloElement?.textContent?.trim();
+          // Busca título com vários seletores
+          const possiveisTitulos = [
+            'h2',
+            'h3',
+            'a[class*="title"]',
+            '.poly-component__title',
+            '[class*="ui-search-item__title"]',
+            'p[class*="promotion-item__title"]'
+          ];
           
-          // Tenta extrair o preço
-          const precoElement = card.querySelector('[class*="price"], .andes-money-amount__fraction');
-          const precoTexto = precoElement?.textContent?.trim();
-          const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) : 0;
+          let titulo = '';
+          for (const sel of possiveisTitulos) {
+            const el = card.querySelector(sel);
+            if (el && el.textContent.trim()) {
+              titulo = el.textContent.trim();
+              break;
+            }
+          }
           
-          // Tenta extrair o link
-          const linkElement = card.querySelector('a') || card;
-          const link = linkElement?.href || linkElement?.getAttribute('href');
+          // Busca preço
+          const possiveisPrecos = [
+            '.andes-money-amount__fraction',
+            '[class*="price-tag-fraction"]',
+            'span[class*="price"]',
+            '.price-tag-amount'
+          ];
           
-          // Tenta extrair a imagem
-          const imagemElement = card.querySelector('img');
-          const imagem = imagemElement?.src || imagemElement?.getAttribute('data-src');
+          let precoTexto = '';
+          for (const sel of possiveisPrecos) {
+            const el = card.querySelector(sel);
+            if (el && el.textContent.trim()) {
+              precoTexto = el.textContent.trim();
+              break;
+            }
+          }
           
-          // Tenta extrair desconto
-          const descontoElement = card.querySelector('[class*="discount"], [class*="off"]');
-          const desconto = descontoElement?.textContent?.trim();
+          const preco = precoTexto ? 
+            parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) : 0;
           
-          // Se tem título e link, adiciona
-          if (titulo && link && link.includes('mercadolivre.com')) {
+          // Busca link
+          const linkElement = card.querySelector('a');
+          const link = linkElement ? linkElement.href : '';
+          
+          // Busca imagem
+          const imgElement = card.querySelector('img');
+          const imagem = imgElement ? 
+            (imgElement.src || imgElement.getAttribute('data-src') || '') : '';
+          
+          // Se tem pelo menos título OU link válido, adiciona
+          if ((titulo && titulo.length > 3) || (link && link.includes('MLB'))) {
             items.push({
-              titulo: titulo,
+              titulo: titulo || 'Sem título',
               preco: preco,
               link: link,
-              imagem: imagem || '',
-              desconto: desconto || '',
+              imagem: imagem,
               posicao: index + 1
             });
           }
+          
         } catch (error) {
-          console.error(`Erro ao extrair produto ${index}:`, error.message);
+          console.error(`Erro no card ${index}:`, error.message);
         }
       });
       
@@ -118,6 +178,17 @@ app.get("/ofertas", async (req, res) => {
     await browser.close();
     
     console.log(`✅ Extraídos ${produtos.length} produtos`);
+    
+    // Se não encontrou nada, retorna com mais informações
+    if (produtos.length === 0) {
+      return res.json({
+        status: "aviso",
+        total: 0,
+        mensagem: "Nenhum produto encontrado. Pode ser bloqueio do ML ou mudança na estrutura.",
+        data_extracao: new Date().toISOString(),
+        produtos: []
+      });
+    }
     
     res.json({
       status: "ok",
@@ -130,11 +201,11 @@ app.get("/ofertas", async (req, res) => {
     console.error("❌ Erro ao buscar ofertas:", error.message);
     res.status(500).json({
       status: "erro",
-      mensagem: error.message
+      mensagem: error.message,
+      stack: error.stack
     });
   }
 });
-
 // ============================================
 // ENDPOINT: BUSCAR OFERTAS POR CATEGORIA
 // ============================================
