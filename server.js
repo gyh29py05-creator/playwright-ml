@@ -49,7 +49,7 @@ app.post("/mercado", async (req, res) => {
     const { url } = req.body;
 
     const browser = await chromium.launch({
-      headless: true
+      headless: false
     });
 
     const context = await browser.newContext({
