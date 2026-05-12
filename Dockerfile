@@ -1,11 +1,11 @@
-FROM mcr.microsoft.com/playwright:v1.52.0-noble
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 WORKDIR /app
 
 COPY . .
 
 RUN npm init -y
-RUN npm install express playwright
+RUN npm install express playwright@1.60.0
 
 EXPOSE 3000
 
