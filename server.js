@@ -347,4 +347,48 @@ app.post("/mercado", async (req, res) => {
       await browser.close();
       
       if (shortened && shortened.links && shortened.links[0]) {
-        con
+        console.log("✅ Link encurtado com sucesso!");
+        return res.json({
+          status: "ok",
+          url_original: url,
+          url_afiliado: affiliateUrl,
+          url_encurtada: shortened.links[0],
+          tracking_id: trackingId
+        });
+      }
+    } catch (e) {
+      console.log("⚠️ Não conseguiu encurtar, retornando link normal");
+    }
+    
+    // Se não conseguiu encurtar, retorna o link com tracking_id
+    res.json({
+      status: "ok",
+      url_original: url,
+      url_afiliado: affiliateUrl,
+      tracking_id: trackingId,
+      mensagem: "Link gerado (não encurtado)"
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro:", error.message);
+    res.status(500).json({
+      status: "erro",
+      mensagem: error.message
+    });
+  }
+});
+
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`📍 http://localhost:${PORT}`);
+  console.log(`\n📋 Endpoints disponíveis:`);
+  console.log(`   GET  /              - Info da API`);
+  console.log(`   GET  /ofertas       - Buscar ofertas do dia`);
+  console.log(`   GET  /ofertas/:cat  - Buscar ofertas por categoria`);
+  console.log(`   POST /mercado-simples - Gerar link de afiliado`);
+  console.log(`   POST /mercado       - Gerar link (tenta encurtar)`);
+});
