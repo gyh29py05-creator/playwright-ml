@@ -1,3 +1,47 @@
+const express = require("express");
+const { chromium } = require("playwright");
+
+const app = express();
+
+app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.send("Playwright API Running");
+});
+
+app.post("/login", async (req, res) => {
+
+  try {
+
+    const browser = await chromium.launch({
+      headless: true
+    });
+
+    const context = await browser.newContext();
+
+    const page = await context.newPage();
+
+    await page.goto("https://www.mercadolivre.com.br");
+
+    res.send("Faça login manualmente no Mercado Livre");
+
+    page.on("close", async () => {
+      await context.storageState({ path: "auth.json" });
+      await browser.close();
+      console.log("Sessão Mercado Livre criada");
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      status: "erro",
+      mensagem: error.message
+    });
+
+  }
+
+});
+
 app.post("/mercado", async (req, res) => {
 
   try {
@@ -14,6 +58,8 @@ app.post("/mercado", async (req, res) => {
 
     const page = await context.newPage();
 
+    await page.goto("https://www.mercadolivre.com.br/afiliados/linkbuilder#hub");
+
     const response = await page.evaluate(async ({ url }) => {
 
       const result = await fetch(
@@ -26,8 +72,7 @@ app.post("/mercado", async (req, res) => {
           body: JSON.stringify({
             urls: [url],
             tag: "ragi6098412"
-          }),
-          credentials: "include"
+          })
         }
       );
 
@@ -51,4 +96,8 @@ app.post("/mercado", async (req, res) => {
 
   }
 
+});
+
+app.listen(3000, () => {
+  console.log("Servidor rodando na porta 3000");
 });
