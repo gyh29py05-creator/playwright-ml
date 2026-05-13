@@ -15,12 +15,13 @@ app.get("/", (req, res) => {
   res.json({
     status: "online",
     mensagem: "Playwright API - Sistema de Afiliados ML",
-    versao: "2.0",
+    versao: "3.0",
     endpoints: {
       ofertas: "GET /ofertas - Busca todas as ofertas do dia",
       ofertas_categoria: "GET /ofertas/:categoria - Busca ofertas de uma categoria",
       mercado_simples: "POST /mercado-simples - Gera link de afiliado rápido",
-      mercado: "POST /mercado - Gera link de afiliado (tenta encurtar)"
+      mercado: "POST /mercado - Gera link de afiliado (tenta encurtar)",
+      mercado_oficial: "POST /mercado-oficial - Gera link meli.la oficial"
     },
     exemplos: {
       ofertas_geral: "GET /ofertas",
@@ -54,17 +55,14 @@ app.get("/ofertas", async (req, res) => {
     
     const page = await context.newPage();
     
-    // Vai para a página de ofertas
     console.log("📄 Acessando página de ofertas...");
     await page.goto("https://www.mercadolivre.com.br/ofertas", {
       waitUntil: "domcontentloaded",
       timeout: 30000
     });
     
-    // Aguarda a página carregar
     await page.waitForTimeout(3000);
     
-    // Faz scroll para carregar produtos lazy-load
     console.log("📜 Fazendo scroll na página...");
     await page.evaluate(() => {
       window.scrollTo(0, document.body.scrollHeight / 2);
@@ -78,11 +76,9 @@ app.get("/ofertas", async (req, res) => {
     
     console.log("🔍 Extraindo produtos...");
     
-    // Extrai os produtos
     const produtos = await page.evaluate(() => {
       const items = [];
       
-      // Tenta vários seletores diferentes
       const possiveisSeletores = [
         'article',
         'div[class*="ui-search-result"]',
@@ -98,26 +94,20 @@ app.get("/ofertas", async (req, res) => {
       for (const seletor of possiveisSeletores) {
         const cards = Array.from(document.querySelectorAll(seletor));
         if (cards.length > 0) {
-          console.log(`✓ Encontrados ${cards.length} elementos com: ${seletor}`);
           todosCards = cards;
           break;
         }
       }
       
-      console.log(`Total de cards encontrados: ${todosCards.length}`);
-      
       todosCards.forEach((card, index) => {
         try {
-          // Busca título com vários seletores
+          // Título
           const possiveisTitulos = [
-            'h2',
-            'h3',
-            'a[class*="title"]',
+            'h2', 'h3', 'a[class*="title"]',
             '.poly-component__title',
             '[class*="ui-search-item__title"]',
             'p[class*="promotion-item__title"]'
           ];
-          
           let titulo = '';
           for (const sel of possiveisTitulos) {
             const el = card.querySelector(sel);
@@ -126,47 +116,105 @@ app.get("/ofertas", async (req, res) => {
               break;
             }
           }
-          
-          // Busca preço
+
+          // Preço atual
           const possiveisPrecos = [
             '.andes-money-amount__fraction',
             '[class*="price-tag-fraction"]',
             'span[class*="price"]',
             '.price-tag-amount'
           ];
-          
           let precoTexto = '';
           for (const sel of possiveisPrecos) {
-            const el = card.querySelector(sel);
-            if (el && el.textContent.trim()) {
-              precoTexto = el.textContent.trim();
+            const els = card.querySelectorAll(sel);
+            if (els.length > 0) {
+              precoTexto = els[0].textContent.trim();
               break;
             }
           }
-          
-          const preco = precoTexto ? 
+          const preco = precoTexto ?
             parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) : 0;
-          
-          // Busca link
+
+          // Preço original (riscado)
+          let precoOriginal = 0;
+          const precoOriginalEl = card.querySelector(
+            's .andes-money-amount__fraction, ' +
+            '.andes-money-amount--previous .andes-money-amount__fraction'
+          );
+          if (precoOriginalEl) {
+            precoOriginal = parseFloat(
+              precoOriginalEl.textContent.trim().replace(/[^\d,]/g, '').replace(',', '.')
+            );
+          }
+
+          // Desconto
+          let desconto = '';
+          const descontoEl = card.querySelector(
+            '[class*="discount"], [class*="off"], .poly-price__discount'
+          );
+          if (descontoEl) desconto = descontoEl.textContent.trim();
+
+          // Parcelas
+          let parcelas = '';
+          const parcelasEl = card.querySelector(
+            '[class*="installment"], [class*="parcela"], .poly-price__installments'
+          );
+          if (parcelasEl) parcelas = parcelasEl.textContent.trim();
+
+          // Avaliação
+          let avaliacao = 0;
+          const avaliacaoEl = card.querySelector(
+            '[class*="rating"], .poly-reviews__rating'
+          );
+          if (avaliacaoEl) {
+            avaliacao = parseFloat(avaliacaoEl.textContent.trim()) || 0;
+          }
+
+          // Número de reviews
+          let numReviews = 0;
+          const reviewsEl = card.querySelector(
+            '[class*="reviews__total"], [class*="rating__count"]'
+          );
+          if (reviewsEl) {
+            numReviews = parseInt(reviewsEl.textContent.replace(/[^\d]/g, '')) || 0;
+          }
+
+          // Cupom
+          let cupom = '';
+          const cupomEl = card.querySelector('[class*="coupon"], [class*="cupom"]');
+          if (cupomEl) cupom = cupomEl.textContent.trim();
+
+          // Frete grátis
+          let freteGratis = false;
+          const freteEl = card.querySelector('[class*="shipping"], [class*="frete"]');
+          if (freteEl) freteGratis = freteEl.textContent.toLowerCase().includes('grátis');
+
+          // Link
           const linkElement = card.querySelector('a');
           const link = linkElement ? linkElement.href : '';
-          
-          // Busca imagem
+
+          // Imagem
           const imgElement = card.querySelector('img');
-          const imagem = imgElement ? 
+          const imagem = imgElement ?
             (imgElement.src || imgElement.getAttribute('data-src') || '') : '';
-          
-          // Se tem pelo menos título OU link válido, adiciona
+
           if ((titulo && titulo.length > 3) || (link && link.includes('MLB'))) {
             items.push({
               titulo: titulo || 'Sem título',
               preco: preco,
+              preco_original: precoOriginal,
+              desconto: desconto,
+              parcelas: parcelas,
+              avaliacao: avaliacao,
+              num_reviews: numReviews,
+              cupom: cupom,
+              frete_gratis: freteGratis,
               link: link,
               imagem: imagem,
               posicao: index + 1
             });
           }
-          
+
         } catch (error) {
           console.error(`Erro no card ${index}:`, error.message);
         }
@@ -179,12 +227,11 @@ app.get("/ofertas", async (req, res) => {
     
     console.log(`✅ Extraídos ${produtos.length} produtos`);
     
-    // Se não encontrou nada, retorna com mais informações
     if (produtos.length === 0) {
       return res.json({
         status: "aviso",
         total: 0,
-        mensagem: "Nenhum produto encontrado. Pode ser bloqueio do ML ou mudança na estrutura.",
+        mensagem: "Nenhum produto encontrado.",
         data_extracao: new Date().toISOString(),
         produtos: []
       });
@@ -201,11 +248,11 @@ app.get("/ofertas", async (req, res) => {
     console.error("❌ Erro ao buscar ofertas:", error.message);
     res.status(500).json({
       status: "erro",
-      mensagem: error.message,
-      stack: error.stack
+      mensagem: error.message
     });
   }
 });
+
 // ============================================
 // ENDPOINT: BUSCAR OFERTAS POR CATEGORIA
 // ============================================
@@ -220,16 +267,12 @@ app.get("/ofertas/:categoria", async (req, res) => {
     });
     
     const page = await browser.newPage();
-    
-    // URL com categoria específica
     const url = `https://www.mercadolivre.com.br/ofertas?container_id=${categoria}`;
     
     await page.goto(url, {
       waitUntil: "networkidle",
       timeout: 30000
     });
-    
-    console.log("📄 Página carregada, extraindo produtos...");
     
     const produtos = await page.evaluate(() => {
       const items = [];
@@ -263,15 +306,26 @@ app.get("/ofertas/:categoria", async (req, res) => {
           
           const descontoElement = card.querySelector('[class*="discount"], [class*="off"]');
           const desconto = descontoElement?.textContent?.trim();
+
+          const parcelasEl = card.querySelector('[class*="installment"], [class*="parcela"]');
+          const parcelas = parcelasEl?.textContent?.trim() || '';
+
+          const avaliacaoEl = card.querySelector('[class*="rating"]');
+          const avaliacao = avaliacaoEl ? parseFloat(avaliacaoEl.textContent.trim()) || 0 : 0;
+
+          const freteEl = card.querySelector('[class*="shipping"], [class*="frete"]');
+          const freteGratis = freteEl ? freteEl.textContent.toLowerCase().includes('grátis') : false;
           
           if (titulo && link && link.includes('mercadolivre.com')) {
             items.push({
-              titulo: titulo,
-              preco: preco,
-              link: link,
-              imagem: imagem || '',
+              titulo,
+              preco,
               desconto: desconto || '',
-              categoria: categoria,
+              parcelas,
+              avaliacao,
+              frete_gratis: freteGratis,
+              link,
+              imagem: imagem || '',
               posicao: index + 1
             });
           }
@@ -285,22 +339,16 @@ app.get("/ofertas/:categoria", async (req, res) => {
     
     await browser.close();
     
-    console.log(`✅ Extraídos ${produtos.length} produtos da categoria ${categoria}`);
-    
     res.json({
       status: "ok",
-      categoria: categoria,
+      categoria,
       total: produtos.length,
       data_extracao: new Date().toISOString(),
-      produtos: produtos
+      produtos
     });
     
   } catch (error) {
-    console.error("❌ Erro ao buscar ofertas:", error.message);
-    res.status(500).json({
-      status: "erro",
-      mensagem: error.message
-    });
+    res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
 
@@ -314,14 +362,10 @@ app.post("/mercado-simples", async (req, res) => {
     if (!url) {
       return res.status(400).json({
         status: "erro",
-        mensagem: "URL do produto não fornecida",
-        exemplo: { 
-          url: "https://produto.mercadolivre.com.br/MLB-123456-produto" 
-        }
+        mensagem: "URL do produto não fornecida"
       });
     }
     
-    // Validar se é URL do Mercado Livre
     if (!url.includes("mercadolivre.com") && !url.includes("mercadolibre.com")) {
       return res.status(400).json({
         status: "erro",
@@ -329,15 +373,10 @@ app.post("/mercado-simples", async (req, res) => {
       });
     }
     
-    // Seu tracking_id de afiliado
     const trackingId = "ragi6098412";
-    
-    // Adiciona o tracking_id na URL
     const affiliateUrl = url.includes('?') 
       ? `${url}&tracking_id=${trackingId}`
       : `${url}?tracking_id=${trackingId}`;
-    
-    console.log("✅ Link de afiliado gerado:", affiliateUrl);
     
     res.json({
       status: "ok",
@@ -348,37 +387,26 @@ app.post("/mercado-simples", async (req, res) => {
     });
     
   } catch (error) {
-    console.error("❌ Erro:", error.message);
-    res.status(500).json({
-      status: "erro",
-      mensagem: error.message
-    });
+    res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
 
 // ============================================
-// ENDPOINT: GERAR LINK DE AFILIADO (COM PLAYWRIGHT)
+// ENDPOINT: GERAR LINK DE AFILIADO (PLAYWRIGHT)
 // ============================================
 app.post("/mercado", async (req, res) => {
   try {
     const { url } = req.body;
     
     if (!url) {
-      return res.status(400).json({
-        status: "erro",
-        mensagem: "URL do produto não fornecida"
-      });
+      return res.status(400).json({ status: "erro", mensagem: "URL não fornecida" });
     }
     
-    // Primeiro gera o link com tracking_id
     const trackingId = "ragi6098412";
     const affiliateUrl = url.includes('?') 
       ? `${url}&tracking_id=${trackingId}`
       : `${url}?tracking_id=${trackingId}`;
     
-    console.log("🔄 Tentando encurtar:", affiliateUrl);
-    
-    // Tenta encurtar (opcional)
     try {
       const browser = await chromium.launch({
         headless: true,
@@ -388,12 +416,10 @@ app.post("/mercado", async (req, res) => {
       const context = await browser.newContext();
       const page = await context.newPage();
       
-      // Vai para encurtador do ML
       await page.goto("https://www.mercadolivre.com.br/afiliados/linkbuilder#hub", {
         timeout: 15000
       });
       
-      // Tenta encurtar pela API
       const shortened = await page.evaluate(async (longUrl, tag) => {
         try {
           const result = await fetch(
@@ -404,7 +430,6 @@ app.post("/mercado", async (req, res) => {
               body: JSON.stringify({ urls: [longUrl], tag })
             }
           );
-          
           if (result.ok) {
             const data = await result.json();
             return data;
@@ -417,21 +442,19 @@ app.post("/mercado", async (req, res) => {
       
       await browser.close();
       
-      if (shortened && shortened.links && shortened.links[0]) {
-        console.log("✅ Link encurtado com sucesso!");
+      if (shortened && shortened.urls && shortened.urls[0]) {
         return res.json({
           status: "ok",
           url_original: url,
-          url_afiliado: affiliateUrl,
-          url_encurtada: shortened.links[0],
+          url_afiliado: shortened.urls[0].short_url || affiliateUrl,
+          url_encurtada: shortened.urls[0].short_url,
           tracking_id: trackingId
         });
       }
     } catch (e) {
-      console.log("⚠️ Não conseguiu encurtar, retornando link normal");
+      console.log("⚠️ Não conseguiu encurtar");
     }
     
-    // Se não conseguiu encurtar, retorna o link com tracking_id
     res.json({
       status: "ok",
       url_original: url,
@@ -441,18 +464,16 @@ app.post("/mercado", async (req, res) => {
     });
     
   } catch (error) {
-    console.error("❌ Erro:", error.message);
-    res.status(500).json({
-      status: "erro",
-      mensagem: error.message
-    });
+    res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
-// Endpoint que gera link meli.la oficial
+
+// ============================================
+// ENDPOINT: GERAR LINK MELI.LA OFICIAL
+// ============================================
 app.post('/mercado-oficial', async (req, res) => {
   try {
     const { url } = req.body;
-    
     const cookie = process.env.ML_COOKIE || '';
     
     const response = await fetch('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink', {
@@ -482,6 +503,7 @@ app.post('/mercado-oficial', async (req, res) => {
     res.status(500).json({ erro: error.message });
   }
 });
+
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
@@ -490,9 +512,10 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`📍 http://localhost:${PORT}`);
   console.log(`\n📋 Endpoints disponíveis:`);
-  console.log(`   GET  /              - Info da API`);
-  console.log(`   GET  /ofertas       - Buscar ofertas do dia`);
-  console.log(`   GET  /ofertas/:cat  - Buscar ofertas por categoria`);
+  console.log(`   GET  /                - Info da API`);
+  console.log(`   GET  /ofertas         - Buscar ofertas do dia`);
+  console.log(`   GET  /ofertas/:cat    - Buscar ofertas por categoria`);
   console.log(`   POST /mercado-simples - Gerar link de afiliado`);
-  console.log(`   POST /mercado       - Gerar link (tenta encurtar)`);
+  console.log(`   POST /mercado         - Gerar link (tenta encurtar)`);
+  console.log(`   POST /mercado-oficial - Gerar link meli.la oficial`);
 });
