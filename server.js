@@ -617,6 +617,17 @@ console.log('📸 Screenshot salvo!');
   }
 });
 // ============================================
+// ENDPOINT: DEBUG SCREENSHOT
+// ============================================
+app.get("/debug-screenshot", (req, res) => {
+  const arquivo = '/tmp/shein-debug.png';
+  if (fs.existsSync(arquivo)) {
+    res.sendFile(arquivo);
+  } else {
+    res.json({ status: "erro", mensagem: "Screenshot não encontrado. Chame /shein primeiro." });
+  }
+});
+// ============================================
 // INICIAR SERVIDOR
 // ============================================
 const PORT = process.env.PORT || 3000;
