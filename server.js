@@ -18,7 +18,7 @@ const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
 
 if (!CREATORS_CLIENT_ID || !CREATORS_CLIENT_SECRET) {
-    throw new Error('⚠️ ERRO: Credenciais da Amazon não encontradas! Configure o arquivo .env');
+  throw new Error('⚠️ ERRO: Credenciais da Amazon não encontradas! Configure o arquivo .env');
 }
 
 let creatorsToken = null;
@@ -62,18 +62,21 @@ async function getCreatorsToken() {
 app.get("/", (req, res) => {
   res.json({
     status: "online",
-    mensagem: "Playwright API - Sistema de Afiliados ML + Amazon",
-    versao: "5.0",
+    mensagem: "Playwright API - Sistema de Afiliados ML + Amazon + Shein",
+    versao: "6.0",
     endpoints: {
       ofertas: "GET /ofertas - Busca todas as ofertas do dia (ML)",
       ofertas_categoria: "GET /ofertas/:categoria - Busca ofertas de uma categoria (ML)",
       mercado_simples: "POST /mercado-simples - Gera link de afiliado rápido (ML)",
       mercado: "POST /mercado - Gera link de afiliado (tenta encurtar) (ML)",
       mercado_oficial: "POST /mercado-oficial - Gera link meli.la oficial (ML)",
-      amazon: "GET /amazon - Busca ofertas Amazon (Casa e Decoração)",
+      amazon: "GET /amazon - Busca ofertas Amazon (nacionais + internacionais)",
       amazon_link: "POST /amazon-link - Gera link de afiliado Amazon",
       amazon_buscar: "POST /amazon-buscar - Busca produtos via Creators API",
-      amazon_produto: "POST /amazon-produto - Pega detalhes de produto por ASIN via Creators API"
+      amazon_produto: "POST /amazon-produto - Pega detalhes de produto por ASIN via Creators API",
+      shein: "GET /shein?categoria=moda - Busca produtos Shein",
+      shein_categorias: "Categorias: moda, moda-feminina, moda-masculina, maquiagem, aesthetics, camisetas, linho, promocao",
+      debug_screenshot: "GET /debug-screenshot - Ver último screenshot do Playwright"
     }
   });
 });
@@ -286,11 +289,13 @@ app.post('/mercado-oficial', async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT: BUSCAR OFERTAS AMAZON (Playwright)
+// ENDPOINT: BUSCAR OFERTAS AMAZON (nacionais + internacionais + bugs)
 // ============================================
 app.get("/amazon", async (req, res) => {
   try {
-    console.log("🔄 Buscando ofertas Amazon...");
+    const { tipo = "todos" } = req.query; // tipos: nacionais, internacionais, todos
+    console.log(`🔄 Buscando ofertas Amazon - tipo: ${tipo}`);
+
     const browser = await chromium.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
@@ -302,50 +307,94 @@ app.get("/amazon", async (req, res) => {
       extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' }
     });
     const page = await context.newPage();
-    await page.goto("https://www.amazon.com.br/s?k=casa+e+decoracao&i=home&bbn=16209062011&rh=n%3A16209062011&dc&ref=sr_nr_n_1", { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(4000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
 
-    const produtos = await page.evaluate(() => {
-      const items = [];
-      const cards = Array.from(document.querySelectorAll('div[data-component-type="s-search-result"]'));
-      cards.forEach((card, index) => {
-        try {
-          const titulo = card.querySelector('h2 a span, h2 span')?.textContent?.trim() || '';
-          const precoInteiro = card.querySelector('.a-price-whole')?.textContent?.replace(/[^\d]/g, '') || '0';
-          const precoFracao = card.querySelector('.a-price-fraction')?.textContent?.replace(/[^\d]/g, '') || '00';
-          const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
-          const precoOrigTexto = card.querySelector('.a-text-price .a-offscreen')?.textContent?.trim() || '';
-          const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-          const desconto = card.querySelector('span.a-letter-space + span, [class*="savingsPercentage"]')?.textContent?.trim() || '';
-          const avaliacaoTexto = card.querySelector('span.a-icon-alt')?.textContent?.trim() || '';
-          const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
-          const num_reviews = parseInt(card.querySelector('span[aria-label*="estrelas"] + span, a[href*="customerReviews"] span')?.textContent?.replace(/[^\d]/g, '')) || 0;
-          const imagem = card.querySelector('img.s-image')?.src || '';
-          const linkEl = card.querySelector('h2 a, a.a-link-normal');
-          let link = linkEl?.href || '';
-          if (link && !link.startsWith('http')) link = 'https://www.amazon.com.br' + link;
-          const asin = card.getAttribute('data-asin') || '';
-          const frete_gratis = !!card.querySelector('i[aria-label="Amazon Prime"], [data-testid*="prime"]');
-          if (titulo && titulo.length > 3 && preco > 0) {
-            items.push({ titulo, preco, preco_original, desconto, avaliacao, num_reviews, imagem, link, asin, frete_gratis, posicao: index + 1 });
-          }
-        } catch (e) { console.error(`Erro no card ${index}:`, e.message); }
-      });
-      return items;
-    });
+    // URL com filtro nacional (shipped from Brazil)
+    const urlNacional = "https://www.amazon.com.br/s?k=casa+cozinha&i=home&rh=p_76%3A11&dc&ref=sr_nr_p_76_1";
+    const urlGeral = "https://www.amazon.com.br/s?k=casa+e+decoracao&i=home&bbn=16209062011&rh=n%3A16209062011&dc&ref=sr_nr_n_1";
+
+    // Busca nacionais
+    let produtosNacionais = [];
+    if (tipo === "nacionais" || tipo === "todos") {
+      await page.goto(urlNacional, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(4000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+      await page.waitForTimeout(2000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(2000);
+      produtosNacionais = await extrairProdutosAmazon(page, "nacional");
+    }
+
+    // Busca todos (inclui internacionais)
+    let produtosTodos = [];
+    if (tipo === "internacionais" || tipo === "todos") {
+      await page.goto(urlGeral, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(4000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+      await page.waitForTimeout(2000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(2000);
+      produtosTodos = await extrairProdutosAmazon(page, "internacional");
+    }
 
     await browser.close();
-    console.log(`✅ Amazon: ${produtos.length} produtos extraídos`);
-    res.json({ status: "ok", total: produtos.length, data_extracao: new Date().toISOString(), produtos });
+
+    // Combina e remove duplicatas por ASIN
+    const todosProdutos = [...produtosNacionais, ...produtosTodos];
+    const unicos = todosProdutos.filter((p, i, arr) => arr.findIndex(x => x.asin === p.asin) === i);
+    const bugs = unicos.filter(p => p.possivel_bug);
+
+    console.log(`✅ Amazon: ${unicos.length} produtos (${produtosNacionais.length} nacionais, ${produtosTodos.length} internacionais) | ${bugs.length} bugs`);
+    res.json({
+      status: "ok",
+      total: unicos.length,
+      nacionais: produtosNacionais.length,
+      internacionais: produtosTodos.length,
+      bugs_detectados: bugs.length,
+      data_extracao: new Date().toISOString(),
+      produtos: unicos
+    });
   } catch (error) {
     console.error("❌ Erro Amazon:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+
+// Função auxiliar para extrair produtos da Amazon
+async function extrairProdutosAmazon(page, origem) {
+  return await page.evaluate((origem) => {
+    const items = [];
+    const cards = Array.from(document.querySelectorAll('div[data-component-type="s-search-result"]'));
+    cards.forEach((card, index) => {
+      try {
+        const titulo = card.querySelector('h2 a span, h2 span')?.textContent?.trim() || '';
+        const precoInteiro = card.querySelector('.a-price-whole')?.textContent?.replace(/[^\d]/g, '') || '0';
+        const precoFracao = card.querySelector('.a-price-fraction')?.textContent?.replace(/[^\d]/g, '') || '00';
+        const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
+        const precoOrigTexto = card.querySelector('.a-text-price .a-offscreen')?.textContent?.trim() || '';
+        const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+        const desconto = card.querySelector('span.a-letter-space + span, [class*="savingsPercentage"]')?.textContent?.trim() || '';
+        const avaliacaoTexto = card.querySelector('span.a-icon-alt')?.textContent?.trim() || '';
+        const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
+        const num_reviews = parseInt(card.querySelector('span[aria-label*="estrelas"] + span, a[href*="customerReviews"] span')?.textContent?.replace(/[^\d]/g, '')) || 0;
+        const imagem = card.querySelector('img.s-image')?.src || '';
+        const linkEl = card.querySelector('h2 a, a.a-link-normal');
+        let link = linkEl?.href || '';
+        if (link && !link.startsWith('http')) link = 'https://www.amazon.com.br' + link;
+        const asin = card.getAttribute('data-asin') || '';
+        const frete_gratis = !!card.querySelector('i[aria-label="Amazon Prime"], [data-testid*="prime"]');
+
+        // Detectar bug de preço (desconto >= 70%)
+        const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
+        const possivel_bug = pctDesconto >= 70;
+
+        if (titulo && titulo.length > 3 && preco > 0) {
+          items.push({ titulo, preco, preco_original, desconto, pct_desconto: pctDesconto, possivel_bug, avaliacao, num_reviews, imagem, link, asin, frete_gratis, origem, posicao: index + 1 });
+        }
+      } catch (e) { console.error(`Erro no card ${index}:`, e.message); }
+    });
+    return items;
+  }, origem);
+}
 
 // ============================================
 // ENDPOINT: GERAR LINK DE AFILIADO AMAZON
@@ -483,6 +532,7 @@ app.post('/encurtar-link', async (req, res) => {
     return res.status(500).json({ status: 'erro', mensagem: err.message });
   }
 });
+
 // ============================================
 // ENDPOINT: BUSCAR PRODUTOS SHEIN (Playwright)
 // ============================================
@@ -492,14 +542,18 @@ app.get("/shein", async (req, res) => {
     console.log(`🔄 Buscando produtos Shein - categoria: ${categoria}`);
 
     const urls = {
-      moda: "https://br.shein.com/Women-Clothing-sc-017172961.html",
-      vestidos: "https://br.shein.com/Women-Dresses-cat-1727.html?sort=7",
-      maquiagem: "https://br.shein.com/Beauty-cat-1954.html?sort=7",
-      casa: "https://br.shein.com/Home-cat-1766.html?sort=7",
-      promocao: "https://br.shein.com/promotion/flash-sale"
+      "moda":          "https://br.shein.com/Women-Clothing-sc-017172961.html",
+      "moda-feminina": "https://br.shein.com/Women-Clothing-sc-017172961.html",
+      "moda-masculina":"https://br.shein.com/Men-Clothing-sc-00864889.html",
+      "maquiagem":     "https://br.shein.com/Beauty-cat-1954.html?sort=7",
+      "aesthetics":    "https://br.shein.com/Women-Y2K-cat-2467.html?sort=7",
+      "camisetas":     "https://br.shein.com/Women-Tops-cat-1738.html?sort=7",
+      "linho":         "https://br.shein.com/Women-Linen-cat-3007.html?sort=7",
+      "casa":          "https://br.shein.com/Home-cat-1766.html?sort=7",
+      "promocao":      "https://br.shein.com/promotion/flash-sale"
     };
 
-    const url = urls[categoria] || urls.moda;
+    const url = urls[categoria] || urls["moda"];
 
     const browser = await chromium.launch({
       headless: true,
@@ -510,88 +564,120 @@ app.get("/shein", async (req, res) => {
       viewport: { width: 1920, height: 1080 },
       locale: 'pt-BR'
     });
-const page = await context.newPage();
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-await page.waitForTimeout(6000);
 
-try {
-  await page.waitForSelector('.bsc-cart-item-mini__wrap', { timeout: 15000 });
-  console.log('✅ Cards Shein encontrados!');
-} catch(e) {
-  console.log('⚠️ Timeout esperando cards...');
-}
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(6000);
 
-await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-await page.waitForTimeout(3000);
-await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-await page.waitForTimeout(3000);
-await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-// Fechar popup se aparecer
-try {
-  await page.click('[class*="close"], [class*="Close"], .sui-popup-close, button[class*="close"]', { timeout: 5000 });
-  console.log('✅ Popup fechado!');
-  await page.waitForTimeout(1000);
-} catch(e) {
-  console.log('ℹ️ Nenhum popup encontrado');
-}
-
-await page.evaluate(() => window.scrollTo(0, 0));
-await page.waitForTimeout(1000);
-await page.screenshot({ path: '/tmp/shein-debug.png' });
-console.log('📸 Screenshot salvo!');
-
-const produtos = await page.evaluate(() => {
-await page.screenshot({ path: '/tmp/shein-debug.png' }); // ← ADICIONA AQUI
-console.log('📸 Screenshot salvo!');
-
-
-   const produtos = await page.evaluate(() => {
-  const items = [];
-  
-  // Tenta múltiplos seletores
-  const seletores = [
-    '.bsc-cart-item-mini__wrap',
-    '[da-eid]',
-    '.product-item-v3',
-    '.S-product-item',
-    'section[class*="product"]',
-    'div[class*="product-item"]'
-  ];
-  
-  let cards = [];
-  for (const sel of seletores) {
-    cards = Array.from(document.querySelectorAll(sel));
-    if (cards.length > 0) {
-      console.log('Seletor funcionou:', sel, cards.length);
-      break;
-    }
-  }
-
-  cards.forEach((card, index) => {
+    // Fechar popup se aparecer
     try {
-      const eid = card.getAttribute('da-eid') || '';
-      const link = eid ? `https://br.shein.com/p-p-${eid}.html` : '';
-      const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || '';
-      const precoTexto = card.querySelector('[class*="price"]')?.textContent?.trim() || '';
-      const precoLimpo = precoTexto.match(/R\$[\d.,]+/)?.[0] || '';
-      const preco = parseFloat(precoLimpo.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
-      const img = card.querySelector('img');
-      const imagem = img?.src || img?.getAttribute('data-src') || '';
-      const precoOrigEl = card.querySelector('[class*="del"], [class*="through"], [class*="original"]');
-      const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
-      const preco_original = parseFloat(precoOrigTexto.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
-      const descontoEl = card.querySelector('[class*="discount"], [class*="off"]');
-      const desconto = descontoEl?.textContent?.trim() || '';
-      const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
-      const possivel_bug = pctDesconto >= 70;
+      await page.click('[class*="close"], [class*="Close"], .sui-popup-close, button[class*="close"]', { timeout: 5000 });
+      console.log('✅ Popup fechado!');
+      await page.waitForTimeout(1000);
+    } catch(e) {
+      console.log('ℹ️ Nenhum popup encontrado');
+    }
 
-      if (titulo && titulo.length > 3 && preco > 0) {
-        items.push({ titulo, preco, preco_original, desconto, pct_desconto: pctDesconto, possivel_bug, imagem, link, eid, posicao: index + 1 });
+    // Espera os cards aparecerem
+    try {
+      await page.waitForSelector('[da-eid]', { timeout: 15000 });
+      console.log('✅ Cards Shein encontrados!');
+    } catch(e) {
+      console.log('⚠️ Timeout esperando cards...');
+    }
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(3000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(3000);
+
+    // Screenshot para debug (topo da página)
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: '/tmp/shein-debug.png' });
+    console.log('📸 Screenshot salvo!');
+
+    const produtos = await page.evaluate(() => {
+      const items = [];
+
+      // Tenta múltiplos seletores
+      const seletores = [
+        '[da-eid]',
+        '.bsc-cart-item-mini__wrap',
+        '.product-item-v3',
+        '.S-product-item',
+        'div[class*="product-item"]',
+        'section[class*="product"]'
+      ];
+
+      let cards = [];
+      let seletorUsado = '';
+      for (const sel of seletores) {
+        const found = Array.from(document.querySelectorAll(sel));
+        if (found.length > 0) {
+          cards = found;
+          seletorUsado = sel;
+          break;
+        }
       }
-    } catch (e) {}
-  });
-  return items;
-});
+
+      console.log(`Seletor usado: ${seletorUsado} | Cards: ${cards.length}`);
+
+      cards.forEach((card, index) => {
+        try {
+          const eid = card.getAttribute('da-eid') || '';
+          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : '';
+
+          const titulo = card.querySelector('[class*="title"], [class*="name"], [class*="goods-title"]')?.textContent?.trim() || '';
+
+          const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"], [class*="price"]')?.textContent?.trim() || '';
+          const precoMatch = precoTexto.match(/R\$[\d.,]+/);
+          const precoLimpo = precoMatch ? precoMatch[0] : '';
+          const preco = parseFloat(precoLimpo.replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0;
+
+          const precoOrigEl = card.querySelector('[class*="del"], [class*="through"], [class*="original"], [class*="price-del"]');
+          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
+          const preco_original = parseFloat(precoOrigTexto.replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0;
+
+          const descontoEl = card.querySelector('[class*="discount"], [class*="off-value"], [class*="sale-discount"]');
+          const desconto = descontoEl?.textContent?.trim() || '';
+
+          const img = card.querySelector('img');
+          const imagem = img?.src || img?.getAttribute('data-src') || img?.getAttribute('data-lazyload') || '';
+
+          const avaliacaoEl = card.querySelector('[class*="star"], [class*="rating"]');
+          const avaliacao = parseFloat(avaliacaoEl?.textContent?.trim()) || 0;
+
+          const vendidosEl = card.querySelector('[class*="sold"], [class*="vendido"]');
+          const vendidos = vendidosEl?.textContent?.trim() || '';
+
+          const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
+          const possivel_bug = pctDesconto >= 70;
+
+          if (titulo && titulo.length > 3 && preco > 0 && link) {
+            items.push({
+              titulo,
+              preco,
+              preco_original,
+              desconto,
+              pct_desconto: pctDesconto,
+              possivel_bug,
+              imagem,
+              link,
+              eid,
+              avaliacao,
+              vendidos,
+              posicao: index + 1
+            });
+          }
+        } catch (e) {
+          console.error(`Erro card ${index}:`, e.message);
+        }
+      });
+
+      return items;
+    });
+
     await browser.close();
 
     const bugs = produtos.filter(p => p.possivel_bug);
@@ -611,6 +697,7 @@ console.log('📸 Screenshot salvo!');
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+
 // ============================================
 // ENDPOINT: DEBUG SCREENSHOT
 // ============================================
@@ -622,6 +709,7 @@ app.get("/debug-screenshot", (req, res) => {
     res.json({ status: "erro", mensagem: "Screenshot não encontrado. Chame /shein primeiro." });
   }
 });
+
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
@@ -631,14 +719,18 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
   console.log("");
   console.log("Endpoints disponíveis:");
-  console.log("  GET  /               - Info da API");
-  console.log("  GET  /ofertas        - Buscar ofertas do dia (ML)");
-  console.log("  GET  /ofertas/:cat   - Buscar ofertas por categoria (ML)");
-  console.log("  POST /mercado-simples - Gerar link de afiliado (ML)");
-  console.log("  POST /mercado        - Gerar link (tenta encurtar) (ML)");
-  console.log("  POST /mercado-oficial - Gerar link meli.la oficial (ML)");
-  console.log("  GET  /amazon         - Buscar ofertas Amazon (Playwright)");
-  console.log("  POST /amazon-link    - Gerar link de afiliado Amazon");
-  console.log("  POST /amazon-buscar  - Buscar produtos via Creators API ✨");
-  console.log("  POST /amazon-produto - Detalhes de produto por ASIN ✨");
+  console.log("  GET  /                  - Info da API");
+  console.log("  GET  /ofertas           - Buscar ofertas do dia (ML)");
+  console.log("  GET  /ofertas/:cat      - Buscar ofertas por categoria (ML)");
+  console.log("  POST /mercado-simples   - Gerar link de afiliado (ML)");
+  console.log("  POST /mercado           - Gerar link (tenta encurtar) (ML)");
+  console.log("  POST /mercado-oficial   - Gerar link meli.la oficial (ML)");
+  console.log("  GET  /amazon            - Buscar ofertas Amazon (nacionais + internacionais) ✨");
+  console.log("  GET  /amazon?tipo=nacionais     - Só nacionais");
+  console.log("  GET  /amazon?tipo=internacionais - Só internacionais");
+  console.log("  POST /amazon-link       - Gerar link de afiliado Amazon");
+  console.log("  POST /amazon-buscar     - Buscar produtos via Creators API ✨");
+  console.log("  POST /amazon-produto    - Detalhes de produto por ASIN ✨");
+  console.log("  GET  /shein?categoria=moda      - Buscar produtos Shein ✨");
+  console.log("  GET  /debug-screenshot  - Ver último screenshot Playwright");
 });
