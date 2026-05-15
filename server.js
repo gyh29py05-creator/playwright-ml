@@ -492,7 +492,7 @@ app.get("/shein", async (req, res) => {
     console.log(`🔄 Buscando produtos Shein - categoria: ${categoria}`);
 
     const urls = {
-      moda: "https://br.shein.com/Women-Tops-cat-1738.html?sort=7",
+      moda: "https://br.shein.com/Women-Clothing-sc-017172961.html",
       vestidos: "https://br.shein.com/Women-Dresses-cat-1727.html?sort=7",
       maquiagem: "https://br.shein.com/Beauty-cat-1954.html?sort=7",
       casa: "https://br.shein.com/Home-cat-1766.html?sort=7",
@@ -513,7 +513,7 @@ app.get("/shein", async (req, res) => {
 
     const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(5000);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
     await page.waitForTimeout(2000);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -521,65 +521,64 @@ app.get("/shein", async (req, res) => {
 
     const produtos = await page.evaluate(() => {
       const items = [];
-      const seletores = [
-        'section.product-item-ctn',
-        'div[class*="product-item"]',
-        'li[class*="product-list__item"]',
-        'div[class*="S-product-item"]',
-        'div.product-card'
-      ];
-
-      let cards = [];
-      for (const sel of seletores) {
-        cards = Array.from(document.querySelectorAll(sel));
-        if (cards.length > 0) break;
-      }
+      const cards = Array.from(document.querySelectorAll('.bsc-cart-item-mini__wrap'));
 
       cards.forEach((card, index) => {
         try {
-          const tituloEl = card.querySelector('[class*="product-title"], [class*="goods-title-link"], p[class*="title"], a[class*="name"]');
-          const titulo = tituloEl?.textContent?.trim() || '';
+          const eid = card.getAttribute('da-eid') || '';
+          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : '';
 
-          const precoEl = card.querySelector('[class*="price-new"], [class*="flash-sale-price"], .product-item__prices-info-sale, [class*="normal-price-ctn"] .from');
-          const precoTexto = precoEl?.textContent?.trim() || '';
-          const preco = parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+          const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || '';
 
-          const precoOrigEl = card.querySelector('[class*="price-del"], [class*="price-old"], .through');
+          const precoTexto = card.querySelector('[class*="price"]')?.textContent?.trim() || '';
+          // Pega só o primeiro preço (remove desconto colado junto)
+          const precoLimpo = precoTexto.match(/R\$[\d.,]+/)?.[0] || '';
+          const preco = parseFloat(precoLimpo.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
+
+          // Preço original (riscado)
+          const precoOrigEl = card.querySelector('[class*="del"], [class*="through"], [class*="original"]');
           const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
-          const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+          const preco_original = parseFloat(precoOrigTexto.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
 
-          const descontoEl = card.querySelector('[class*="discount"], [class*="off-value"], [class*="sale-discount"]');
+          // Desconto
+          const descontoEl = card.querySelector('[class*="discount"], [class*="off"]');
           const desconto = descontoEl?.textContent?.trim() || '';
 
-          const imgEl = card.querySelector('img');
-          const imagem = imgEl?.src || imgEl?.getAttribute('data-src') || imgEl?.getAttribute('data-lazyload') || '';
+          // Imagem
+          const img = card.querySelector('img');
+          const imagem = img?.src || img?.getAttribute('data-src') || '';
 
-          const linkEl = card.querySelector('a');
-          let link = linkEl?.href || '';
-          if (link && !link.startsWith('http')) link = 'https://br.shein.com' + link;
-
-          const avaliacaoEl = card.querySelector('[class*="product-rating"], [class*="star-value"], [class*="stars-wrapper"]');
+          // Avaliação
+          const avaliacaoEl = card.querySelector('[class*="star"], [class*="rating"]');
           const avaliacao = parseFloat(avaliacaoEl?.textContent?.trim()) || 0;
 
-          // Detectar possível bug de preço (desconto > 70%)
-          const pctDesconto = preco_original > 0 ? ((preco_original - preco) / preco_original * 100) : 0;
+          // Vendidos
+          const vendidosEl = card.querySelector('[class*="sold"], [class*="vendido"]');
+          const vendidos = vendidosEl?.textContent?.trim() || '';
+
+          // Detectar bug de preço (desconto >= 70%)
+          const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
           const possivel_bug = pctDesconto >= 70;
 
-          if (titulo && titulo.length > 3 && preco > 0) {
+          if (titulo && titulo.length > 3 && preco > 0 && link) {
             items.push({
               titulo,
               preco,
               preco_original,
               desconto,
-              pct_desconto: Math.round(pctDesconto),
+              pct_desconto: pctDesconto,
               possivel_bug,
               imagem,
               link,
+              eid,
               avaliacao,
+              vendidos,
               posicao: index + 1
             });
           }
-        } catch (e) { console.error(`Erro card ${index}:`, e.message); }
+        } catch (e) {
+          console.error(`Erro card ${index}:`, e.message);
+        }
       });
 
       return items;
@@ -588,7 +587,7 @@ app.get("/shein", async (req, res) => {
     await browser.close();
 
     const bugs = produtos.filter(p => p.possivel_bug);
-    console.log(`✅ Shein: ${produtos.length} produtos | ${bugs.length} possíveis bugs de preço`);
+    console.log(`✅ Shein: ${produtos.length} produtos | ${bugs.length} possíveis bugs`);
 
     res.json({
       status: "ok",
