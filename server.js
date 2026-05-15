@@ -483,7 +483,127 @@ app.post('/encurtar-link', async (req, res) => {
     return res.status(500).json({ status: 'erro', mensagem: err.message });
   }
 });
+// ============================================
+// ENDPOINT: BUSCAR PRODUTOS SHEIN (Playwright)
+// ============================================
+app.get("/shein", async (req, res) => {
+  try {
+    const { categoria = "moda" } = req.query;
+    console.log(`🔄 Buscando produtos Shein - categoria: ${categoria}`);
 
+    const urls = {
+      moda: "https://br.shein.com/Women-Tops-cat-1738.html?sort=7",
+      vestidos: "https://br.shein.com/Women-Dresses-cat-1727.html?sort=7",
+      maquiagem: "https://br.shein.com/Beauty-cat-1954.html?sort=7",
+      casa: "https://br.shein.com/Home-cat-1766.html?sort=7",
+      promocao: "https://br.shein.com/promotion/flash-sale"
+    };
+
+    const url = urls[categoria] || urls.moda;
+
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+    });
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR'
+    });
+
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(4000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(2000);
+
+    const produtos = await page.evaluate(() => {
+      const items = [];
+      const seletores = [
+        'section.product-item-ctn',
+        'div[class*="product-item"]',
+        'li[class*="product-list__item"]',
+        'div[class*="S-product-item"]',
+        'div.product-card'
+      ];
+
+      let cards = [];
+      for (const sel of seletores) {
+        cards = Array.from(document.querySelectorAll(sel));
+        if (cards.length > 0) break;
+      }
+
+      cards.forEach((card, index) => {
+        try {
+          const tituloEl = card.querySelector('[class*="product-title"], [class*="goods-title-link"], p[class*="title"], a[class*="name"]');
+          const titulo = tituloEl?.textContent?.trim() || '';
+
+          const precoEl = card.querySelector('[class*="price-new"], [class*="flash-sale-price"], .product-item__prices-info-sale, [class*="normal-price-ctn"] .from');
+          const precoTexto = precoEl?.textContent?.trim() || '';
+          const preco = parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+
+          const precoOrigEl = card.querySelector('[class*="price-del"], [class*="price-old"], .through');
+          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
+          const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+
+          const descontoEl = card.querySelector('[class*="discount"], [class*="off-value"], [class*="sale-discount"]');
+          const desconto = descontoEl?.textContent?.trim() || '';
+
+          const imgEl = card.querySelector('img');
+          const imagem = imgEl?.src || imgEl?.getAttribute('data-src') || imgEl?.getAttribute('data-lazyload') || '';
+
+          const linkEl = card.querySelector('a');
+          let link = linkEl?.href || '';
+          if (link && !link.startsWith('http')) link = 'https://br.shein.com' + link;
+
+          const avaliacaoEl = card.querySelector('[class*="product-rating"], [class*="star-value"], [class*="stars-wrapper"]');
+          const avaliacao = parseFloat(avaliacaoEl?.textContent?.trim()) || 0;
+
+          // Detectar possível bug de preço (desconto > 70%)
+          const pctDesconto = preco_original > 0 ? ((preco_original - preco) / preco_original * 100) : 0;
+          const possivel_bug = pctDesconto >= 70;
+
+          if (titulo && titulo.length > 3 && preco > 0) {
+            items.push({
+              titulo,
+              preco,
+              preco_original,
+              desconto,
+              pct_desconto: Math.round(pctDesconto),
+              possivel_bug,
+              imagem,
+              link,
+              avaliacao,
+              posicao: index + 1
+            });
+          }
+        } catch (e) { console.error(`Erro card ${index}:`, e.message); }
+      });
+
+      return items;
+    });
+
+    await browser.close();
+
+    const bugs = produtos.filter(p => p.possivel_bug);
+    console.log(`✅ Shein: ${produtos.length} produtos | ${bugs.length} possíveis bugs de preço`);
+
+    res.json({
+      status: "ok",
+      categoria,
+      total: produtos.length,
+      bugs_detectados: bugs.length,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
+
+  } catch (error) {
+    console.error("❌ Erro Shein:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
