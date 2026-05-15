@@ -675,29 +675,6 @@ app.get("/amazon", async (req, res) => {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
-    await browser.close();
-
-    // Ordena pelos mais bem avaliados
-    todosProdutos.sort((a, b) => {
-      const scoreA = a.avaliacao * Math.log(a.num_reviews + 1);
-      const scoreB = b.avaliacao * Math.log(b.num_reviews + 1);
-      return scoreB - scoreA;
-    });
-
-    console.log(`✅ Amazon: ${todosProdutos.length} produtos encontrados`);
-
-    res.json({
-      status: "ok",
-      total: todosProdutos.length,
-      data_extracao: new Date().toISOString(),
-      produtos: todosProdutos
-    });
-
-  } catch (error) {
-    console.error("❌ Erro Amazon:", error.message);
-    res.status(500).json({ status: "erro", mensagem: error.message });
-  }
-});
 // ============================================
 // ENDPOINT: GERAR LINK DE AFILIADO AMAZON
 // ============================================
