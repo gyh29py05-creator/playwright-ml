@@ -8,6 +8,62 @@ app.use(express.json());
 
 const AUTH_FILE = path.join(__dirname, "auth.json");
 
+// =====================================================
+// CREDENCIAIS CREATORS API AMAZON
+// =====================================================
+
+// Carrega variáveis de ambiente do arquivo .env
+require('dotenv').config();
+
+const CREATORS_CLIENT_ID = process.env.AMAZON_CLIENT_ID;
+const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
+const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
+
+// Validação: verifica se as credenciais foram carregadas
+if (!CREATORS_CLIENT_ID || !CREATORS_CLIENT_SECRET) {
+    throw new Error('⚠️ ERRO: Credenciais da Amazon não encontradas! Configure o arquivo .env');
+}
+
+// ============================================
+// FUNÇÃO: PEGAR TOKEN CREATORS API (v3.1 LwA)
+// ============================================
+async function getCreatorsToken() {
+  const agora = Date.now();
+
+  // Reutiliza token se ainda válido (com 60s de margem)
+  if (creatorsToken && creatorsTokenExpiry && agora < creatorsTokenExpiry - 60000) {
+    console.log("🔑 Reutilizando token Creators API");
+    return creatorsToken;
+  }
+
+  console.log("🔄 Buscando novo token Creators API...");
+
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: CREATORS_CLIENT_ID,
+    client_secret: CREATORS_CLIENT_SECRET,
+    scope: "creatorsapi::default"
+  });
+
+  const response = await fetch("https://api.amazon.com/auth/o2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString()
+  });
+
+  if (!response.ok) {
+    const erro = await response.text();
+    throw new Error(`Erro ao obter token: ${response.status} - ${erro}`);
+  }
+
+  const data = await response.json();
+  creatorsToken = data.access_token;
+  creatorsTokenExpiry = agora + (data.expires_in * 1000); // expires_in em segundos
+
+  console.log("✅ Token Creators API obtido com sucesso");
+  return creatorsToken;
+}
+
 // ============================================
 // ROTA PRINCIPAL - INFO DA API
 // ============================================
@@ -15,7 +71,7 @@ app.get("/", (req, res) => {
   res.json({
     status: "online",
     mensagem: "Playwright API - Sistema de Afiliados ML + Amazon",
-    versao: "4.0",
+    versao: "5.0",
     endpoints: {
       ofertas: "GET /ofertas - Busca todas as ofertas do dia (ML)",
       ofertas_categoria: "GET /ofertas/:categoria - Busca ofertas de uma categoria (ML)",
@@ -23,14 +79,18 @@ app.get("/", (req, res) => {
       mercado: "POST /mercado - Gera link de afiliado (tenta encurtar) (ML)",
       mercado_oficial: "POST /mercado-oficial - Gera link meli.la oficial (ML)",
       amazon: "GET /amazon - Busca ofertas Amazon (Casa/Cozinha/Bem-estar)",
-      amazon_link: "POST /amazon-link - Gera link de afiliado Amazon"
+      amazon_link: "POST /amazon-link - Gera link de afiliado Amazon",
+      amazon_buscar: "POST /amazon-buscar - Busca produtos via Creators API",
+      amazon_produto: "POST /amazon-produto - Pega detalhes de produto por ASIN via Creators API"
     },
     exemplos: {
       ofertas_geral: "GET /ofertas",
       ofertas_eletronicos: "GET /ofertas/MLB779535-1",
       gerar_link_ml: "POST /mercado-simples com body: {\"url\":\"https://produto...\"}",
       amazon_ofertas: "GET /amazon",
-      amazon_link: "POST /amazon-link com body: {\"url\":\"https://www.amazon.com.br/produto...\"}"
+      amazon_link: "POST /amazon-link com body: {\"url\":\"https://www.amazon.com.br/produto...\"}",
+      amazon_buscar: "POST /amazon-buscar com body: {\"keywords\":\"air fryer\"}",
+      amazon_produto: "POST /amazon-produto com body: {\"asin\":\"B08N5WRWNW\"}"
     }
   });
 });
@@ -498,7 +558,7 @@ app.post('/mercado-oficial', async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT: BUSCAR OFERTAS AMAZON
+// ENDPOINT: BUSCAR OFERTAS AMAZON (Playwright)
 // ============================================
 app.get("/amazon", async (req, res) => {
   try {
@@ -638,9 +698,8 @@ app.post("/amazon-link", async (req, res) => {
       });
     }
 
-    const tag = "giseleramosde-20";
+    const tag = AMAZON_TAG;
 
-    // Extrai o ASIN da URL (formato /dp/ASIN ou /gp/product/ASIN)
     let asin = '';
     const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
     if (asinMatch) {
@@ -650,10 +709,8 @@ app.post("/amazon-link", async (req, res) => {
     let urlAfiliado = '';
 
     if (asin) {
-      // Constrói URL limpa com tag de afiliado
       urlAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${tag}`;
     } else {
-      // Se não encontrou ASIN, adiciona tag na URL original
       urlAfiliado = url.includes('?')
         ? `${url}&tag=${tag}`
         : `${url}?tag=${tag}`;
@@ -677,7 +734,207 @@ app.post("/amazon-link", async (req, res) => {
 });
 
 // ============================================
-// INICIAR SERVIDOR
+// ENDPOINT: BUSCAR PRODUTOS VIA CREATORS API
+// Body: { keywords: "air fryer", categoria: "All" (opcional) }
+// ============================================
+app.post("/amazon-buscar", async (req, res) => {
+  try {
+    const { keywords, categoria = "All", pagina = 1 } = req.body;
+
+    if (!keywords) {
+      return res.status(400).json({
+        status: "erro",
+        mensagem: "Campo 'keywords' obrigatório"
+      });
+    }
+
+    console.log(`🔍 Buscando na Creators API: "${keywords}"`);
+
+    const token = await getCreatorsToken();
+
+    const payload = {
+      keywords: keywords,
+      partnerTag: AMAZON_TAG,
+      partnerType: "Associates",
+      searchIndex: categoria,
+      itemPage: pagina,
+      itemCount: 10,
+      resources: [
+        "itemInfo.title",
+        "itemInfo.byLineInfo",
+        "offersV2.listings.price",
+        "offersV2.listings.condition",
+        "images.primary.medium",
+        "customerReviews.count",
+        "customerReviews.starRating",
+        "itemInfo.features"
+      ],
+      marketplace: "www.amazon.com.br",
+      languagesOfPreference: ["pt_BR"]
+    };
+
+    const response = await fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/searchitems", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "x-marketplace": "www.amazon.com.br"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const erro = await response.text();
+      console.error("❌ Erro Creators API:", erro);
+      return res.status(response.status).json({
+        status: "erro",
+        mensagem: `Erro na Creators API: ${response.status}`,
+        detalhe: erro
+      });
+    }
+
+    const data = await response.json();
+    const itens = data.SearchResult?.Items || [];
+
+    const produtos = itens.map((item, index) => {
+      const asin = item.ASIN || '';
+      const titulo = item.ItemInfo?.Title?.DisplayValue || '';
+      const preco = item.OffersV2?.Listings?.[0]?.Price?.Amount || 0;
+      const moeda = item.OffersV2?.Listings?.[0]?.Price?.Currency || 'BRL';
+      const precoFormatado = item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || '';
+      const imagem = item.Images?.Primary?.Medium?.URL || '';
+      const avaliacao = item.CustomerReviews?.StarRating?.Value || 0;
+      const numReviews = item.CustomerReviews?.Count || 0;
+      const urlAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}`;
+
+      return {
+        asin,
+        titulo,
+        preco,
+        moeda,
+        preco_formatado: precoFormatado,
+        imagem,
+        avaliacao,
+        num_reviews: numReviews,
+        url_afiliado: urlAfiliado,
+        posicao: index + 1
+      };
+    });
+
+    console.log(`✅ Creators API: ${produtos.length} produtos encontrados`);
+
+    res.json({
+      status: "ok",
+      keywords,
+      total: produtos.length,
+      pagina,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
+
+  } catch (error) {
+    console.error("❌ Erro /amazon-buscar:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ENDPOINT: PEGAR DETALHES DE PRODUTO POR ASIN
+// Body: { asin: "B08N5WRWNW" }
+// ============================================
+app.post("/amazon-produto", async (req, res) => {
+  try {
+    const { asin } = req.body;
+
+    if (!asin) {
+      return res.status(400).json({
+        status: "erro",
+        mensagem: "Campo 'asin' obrigatório"
+      });
+    }
+
+    console.log(`🔍 Buscando produto ASIN: ${asin}`);
+
+    const token = await getCreatorsToken();
+
+    const payload = {
+      itemIds: [asin],
+      partnerTag: AMAZON_TAG,
+      partnerType: "Associates",
+      resources: [
+        "itemInfo.title",
+        "itemInfo.byLineInfo",
+        "itemInfo.features",
+        "offersV2.listings.price",
+        "offersV2.listings.condition",
+        "offersV2.listings.deliveryInfo.isPrimeEligible",
+        "images.primary.large",
+        "customerReviews.count",
+        "customerReviews.starRating"
+      ],
+      marketplace: "www.amazon.com.br",
+      languagesOfPreference: ["pt_BR"]
+    };
+
+    const response = await fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/getitems", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "x-marketplace": "www.amazon.com.br"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const erro = await response.text();
+      return res.status(response.status).json({
+        status: "erro",
+        mensagem: `Erro na Creators API: ${response.status}`,
+        detalhe: erro
+      });
+    }
+
+    const data = await response.json();
+    const item = data.ItemsResult?.Items?.[0];
+
+    if (!item) {
+      return res.json({ status: "aviso", mensagem: "Produto não encontrado", asin });
+    }
+
+    const titulo = item.ItemInfo?.Title?.DisplayValue || '';
+    const preco = item.OffersV2?.Listings?.[0]?.Price?.Amount || 0;
+    const precoFormatado = item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || '';
+    const prime = item.OffersV2?.Listings?.[0]?.DeliveryInfo?.IsPrimeEligible || false;
+    const imagem = item.Images?.Primary?.Large?.URL || '';
+    const avaliacao = item.CustomerReviews?.StarRating?.Value || 0;
+    const numReviews = item.CustomerReviews?.Count || 0;
+    const features = item.ItemInfo?.Features?.DisplayValues || [];
+    const urlAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}`;
+
+    res.json({
+      status: "ok",
+      asin,
+      titulo,
+      preco,
+      preco_formatado: precoFormatado,
+      prime,
+      imagem,
+      avaliacao,
+      num_reviews: numReviews,
+      features,
+      url_afiliado: urlAfiliado,
+      tag: AMAZON_TAG
+    });
+
+  } catch (error) {
+    console.error("❌ Erro /amazon-produto:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ENDPOINT LEGADO: ENCURTAR LINK (cookie Amazon)
 // ============================================
 app.post('/encurtar-link', async (req, res) => {
   const { asin } = req.body;
@@ -694,7 +951,6 @@ app.post('/encurtar-link', async (req, res) => {
     }
   });
 
-  // Injeta os cookies da sua sessão Amazon
   await context.addCookies([
     { name: 'session-id', value: '132-2538792-9842543', domain: '.amazon.com.br', path: '/' },
     { name: 'ubid-acbbr', value: '134-1696896-9118130', domain: '.amazon.com.br', path: '/' },
@@ -707,13 +963,10 @@ app.post('/encurtar-link', async (req, res) => {
   const page = await context.newPage();
 
   try {
-    const url = `https://www.amazon.com.br/associates/sitestripe/getShortUrl?asin=${asin}&tag=giseleramosde-20&linkType=text`;
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const url = `https://www.amazon.com.br/associates/sitestripe/getShortUrl?asin=${asin}&tag=${AMAZON_TAG}&linkType=text`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
     const body = await page.textContent('body');
-    
-    // Tenta parsear como JSON
     const json = JSON.parse(body);
-    
     await browser.close();
     
     if (json && json.shortUrl) {
@@ -727,6 +980,9 @@ app.post('/encurtar-link', async (req, res) => {
   }
 });
 
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
@@ -739,6 +995,8 @@ app.listen(PORT, () => {
   console.log("  POST /mercado-simples - Gerar link de afiliado (ML)");
   console.log("  POST /mercado        - Gerar link (tenta encurtar) (ML)");
   console.log("  POST /mercado-oficial - Gerar link meli.la oficial (ML)");
-  console.log("  GET  /amazon         - Buscar ofertas Amazon");
+  console.log("  GET  /amazon         - Buscar ofertas Amazon (Playwright)");
   console.log("  POST /amazon-link    - Gerar link de afiliado Amazon");
+  console.log("  POST /amazon-buscar  - Buscar produtos via Creators API ✨");
+  console.log("  POST /amazon-produto - Detalhes de produto por ASIN ✨");
 });
