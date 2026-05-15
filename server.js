@@ -679,6 +679,54 @@ app.post("/amazon-link", async (req, res) => {
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
+app.post('/encurtar-link', async (req, res) => {
+  const { asin } = req.body;
+  
+  if (!asin) {
+    return res.status(400).json({ status: 'erro', mensagem: 'ASIN obrigatório' });
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    extraHTTPHeaders: {
+      'Accept-Language': 'pt-BR,pt;q=0.9'
+    }
+  });
+
+  // Injeta os cookies da sua sessão Amazon
+  await context.addCookies([
+    { name: 'session-id', value: '132-2538792-9842543', domain: '.amazon.com.br', path: '/' },
+    { name: 'ubid-acbbr', value: '134-1696896-9118130', domain: '.amazon.com.br', path: '/' },
+    { name: 'lc-acbbr', value: 'pt_BR', domain: '.amazon.com.br', path: '/' },
+    { name: 'i18n-prefs', value: 'BRL', domain: '.amazon.com.br', path: '/' },
+    { name: 'session-token', value: '4sy3nP2oJNSyZJbNBvnYr94M4GPMyBF5jx2dqdA02Ti1VA/FLkEZcHKOAl2CAV3Lz7oefK5xKK/lJC4XrI4+c7MJyXl5CwMUaT/nhWALbrgj4eWWMu1YNOE/9FdrMCA8KP4Jz0S/2W/aVSzK/GngxZFjY1zYhARWyNz+/c60AckcFV3PcgCMsMEOHFwpl+o4zlPhW4r2WCKYD8FxLWFK109XLhOEwvRUQWE+53cS/kf/Y1l5YErk5S1F9faJv0sMOKu0kRMcX7w=', domain: '.amazon.com.br', path: '/' },
+    { name: 'at-acbbr', value: 'Atza|gQDRqJ09AwEBAI0fCdeYX-4BoDqOpiHuoziSiAkjSiOKevELvOtbHisW2fRdOkw-w3eMopxltOyBSbaKTHDuKgOM4j1lhcupGAzSUHmMYNnZzHAMb3eyVHT-dkmCHQ5uoS8-agQUhIexpYS6SRngrSZn2aYRCfg2s0COlLoPqoESpv0qUg8gUJ_GFuecRXjaLQe6OiyCHparl6MXMmnTIsXLxITiEn0BC6dVGrzz9-dgqPrgzwoZIVQ0xGGEz-AJAGR1bqEmHK0MQWSgP7fbl7t9r5UP_27C8qB0XYCfGqxknEZH3nYL0Ktpg85u9vSJvSHP1DpSJbcO8bQUqYOQn24AzEAUi8MgdD_EDqES_1wJofXHmqKHwRIvaf4s0A4FzX7bran91XABOTYQmbIaz-UXTO4iciD93C6ts8qFTpu3O52Z', domain: '.amazon.com.br', path: '/' }
+  ]);
+
+  const page = await context.newPage();
+
+  try {
+    const url = `https://www.amazon.com.br/associates/sitestripe/getShortUrl?asin=${asin}&tag=giseleramosde-20&linkType=text`;
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const body = await page.textContent('body');
+    
+    // Tenta parsear como JSON
+    const json = JSON.parse(body);
+    
+    await browser.close();
+    
+    if (json && json.shortUrl) {
+      return res.json({ status: 'ok', url_curta: json.shortUrl, asin });
+    } else {
+      return res.json({ status: 'erro', mensagem: 'Link não gerado', resposta: json });
+    }
+  } catch (err) {
+    await browser.close();
+    return res.status(500).json({ status: 'erro', mensagem: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
