@@ -532,71 +532,53 @@ await page.screenshot({ path: '/tmp/shein-debug.png' }); // ← ADICIONA AQUI
 console.log('📸 Screenshot salvo!');
 
 
-    const produtos = await page.evaluate(() => {
-      const items = [];
-      const cards = Array.from(document.querySelectorAll('.bsc-cart-item-mini__wrap'));
+   const produtos = await page.evaluate(() => {
+  const items = [];
+  
+  // Tenta múltiplos seletores
+  const seletores = [
+    '.bsc-cart-item-mini__wrap',
+    '[da-eid]',
+    '.product-item-v3',
+    '.S-product-item',
+    'section[class*="product"]',
+    'div[class*="product-item"]'
+  ];
+  
+  let cards = [];
+  for (const sel of seletores) {
+    cards = Array.from(document.querySelectorAll(sel));
+    if (cards.length > 0) {
+      console.log('Seletor funcionou:', sel, cards.length);
+      break;
+    }
+  }
 
-      cards.forEach((card, index) => {
-        try {
-          const eid = card.getAttribute('da-eid') || '';
-          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : '';
+  cards.forEach((card, index) => {
+    try {
+      const eid = card.getAttribute('da-eid') || '';
+      const link = eid ? `https://br.shein.com/p-p-${eid}.html` : '';
+      const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || '';
+      const precoTexto = card.querySelector('[class*="price"]')?.textContent?.trim() || '';
+      const precoLimpo = precoTexto.match(/R\$[\d.,]+/)?.[0] || '';
+      const preco = parseFloat(precoLimpo.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
+      const img = card.querySelector('img');
+      const imagem = img?.src || img?.getAttribute('data-src') || '';
+      const precoOrigEl = card.querySelector('[class*="del"], [class*="through"], [class*="original"]');
+      const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
+      const preco_original = parseFloat(precoOrigTexto.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
+      const descontoEl = card.querySelector('[class*="discount"], [class*="off"]');
+      const desconto = descontoEl?.textContent?.trim() || '';
+      const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
+      const possivel_bug = pctDesconto >= 70;
 
-          const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || '';
-
-          const precoTexto = card.querySelector('[class*="price"]')?.textContent?.trim() || '';
-          // Pega só o primeiro preço (remove desconto colado junto)
-          const precoLimpo = precoTexto.match(/R\$[\d.,]+/)?.[0] || '';
-          const preco = parseFloat(precoLimpo.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
-
-          // Preço original (riscado)
-          const precoOrigEl = card.querySelector('[class*="del"], [class*="through"], [class*="original"]');
-          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
-          const preco_original = parseFloat(precoOrigTexto.replace('R$', '').replace('.', '').replace(',', '.')) || 0;
-
-          // Desconto
-          const descontoEl = card.querySelector('[class*="discount"], [class*="off"]');
-          const desconto = descontoEl?.textContent?.trim() || '';
-
-          // Imagem
-          const img = card.querySelector('img');
-          const imagem = img?.src || img?.getAttribute('data-src') || '';
-
-          // Avaliação
-          const avaliacaoEl = card.querySelector('[class*="star"], [class*="rating"]');
-          const avaliacao = parseFloat(avaliacaoEl?.textContent?.trim()) || 0;
-
-          // Vendidos
-          const vendidosEl = card.querySelector('[class*="sold"], [class*="vendido"]');
-          const vendidos = vendidosEl?.textContent?.trim() || '';
-
-          // Detectar bug de preço (desconto >= 70%)
-          const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
-          const possivel_bug = pctDesconto >= 70;
-
-          if (titulo && titulo.length > 3 && preco > 0 && link) {
-            items.push({
-              titulo,
-              preco,
-              preco_original,
-              desconto,
-              pct_desconto: pctDesconto,
-              possivel_bug,
-              imagem,
-              link,
-              eid,
-              avaliacao,
-              vendidos,
-              posicao: index + 1
-            });
-          }
-        } catch (e) {
-          console.error(`Erro card ${index}:`, e.message);
-        }
-      });
-
-      return items;
-    });
-
+      if (titulo && titulo.length > 3 && preco > 0) {
+        items.push({ titulo, preco, preco_original, desconto, pct_desconto: pctDesconto, possivel_bug, imagem, link, eid, posicao: index + 1 });
+      }
+    } catch (e) {}
+  });
+  return items;
+});
     await browser.close();
 
     const bugs = produtos.filter(p => p.possivel_bug);
