@@ -23,7 +23,8 @@ const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
 if (!CREATORS_CLIENT_ID || !CREATORS_CLIENT_SECRET) {
     throw new Error('⚠️ ERRO: Credenciais da Amazon não encontradas! Configure o arquivo .env');
 }
-
+let creatorsToken = null;
+let creatorsTokenExpiry = null;
 // ============================================
 // FUNÇÃO: PEGAR TOKEN CREATORS API (v3.1 LwA)
 // ============================================
