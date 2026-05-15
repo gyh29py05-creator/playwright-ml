@@ -5,7 +5,7 @@ WORKDIR /app
 COPY . .
 
 RUN npm init -y
-RUN npm install express playwright@1.60.0
+RUN npm install express playwright@1.60.0 dotenv
 
 EXPOSE 3000
 
