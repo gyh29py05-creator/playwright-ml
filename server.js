@@ -511,13 +511,20 @@ app.get("/shein", async (req, res) => {
       locale: 'pt-BR'
     });
 
-    const page = await context.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(5000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+await page.waitForTimeout(6000);
+
+try {
+  await page.waitForSelector('.bsc-cart-item-mini__wrap', { timeout: 15000 });
+  console.log('✅ Cards Shein encontrados!');
+} catch(e) {
+  console.log('⚠️ Timeout esperando cards...');
+}
+
+await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+await page.waitForTimeout(3000);
+await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await page.waitForTimeout(3000);
 
     const produtos = await page.evaluate(() => {
       const items = [];
