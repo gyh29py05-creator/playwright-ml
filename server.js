@@ -510,7 +510,7 @@ app.get("/shein", async (req, res) => {
       viewport: { width: 1920, height: 1080 },
       locale: 'pt-BR'
     });
-
+const page = await context.newPage();
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 await page.waitForTimeout(6000);
 
