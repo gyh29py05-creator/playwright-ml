@@ -14,19 +14,23 @@ const AUTH_FILE = path.join(__dirname, "auth.json");
 app.get("/", (req, res) => {
   res.json({
     status: "online",
-    mensagem: "Playwright API - Sistema de Afiliados ML",
-    versao: "3.0",
+    mensagem: "Playwright API - Sistema de Afiliados ML + Amazon",
+    versao: "4.0",
     endpoints: {
-      ofertas: "GET /ofertas - Busca todas as ofertas do dia",
-      ofertas_categoria: "GET /ofertas/:categoria - Busca ofertas de uma categoria",
-      mercado_simples: "POST /mercado-simples - Gera link de afiliado rápido",
-      mercado: "POST /mercado - Gera link de afiliado (tenta encurtar)",
-      mercado_oficial: "POST /mercado-oficial - Gera link meli.la oficial"
+      ofertas: "GET /ofertas - Busca todas as ofertas do dia (ML)",
+      ofertas_categoria: "GET /ofertas/:categoria - Busca ofertas de uma categoria (ML)",
+      mercado_simples: "POST /mercado-simples - Gera link de afiliado rápido (ML)",
+      mercado: "POST /mercado - Gera link de afiliado (tenta encurtar) (ML)",
+      mercado_oficial: "POST /mercado-oficial - Gera link meli.la oficial (ML)",
+      amazon: "GET /amazon - Busca ofertas Amazon (Casa/Cozinha/Bem-estar)",
+      amazon_link: "POST /amazon-link - Gera link de afiliado Amazon"
     },
     exemplos: {
       ofertas_geral: "GET /ofertas",
       ofertas_eletronicos: "GET /ofertas/MLB779535-1",
-      gerar_link: "POST /mercado-simples com body: {\"url\":\"https://produto...\"}"
+      gerar_link_ml: "POST /mercado-simples com body: {\"url\":\"https://produto...\"}",
+      amazon_ofertas: "GET /amazon",
+      amazon_link: "POST /amazon-link com body: {\"url\":\"https://www.amazon.com.br/produto...\"}"
     }
   });
 });
@@ -101,7 +105,6 @@ app.get("/ofertas", async (req, res) => {
       
       todosCards.forEach((card, index) => {
         try {
-          // Título
           const possiveisTitulos = [
             'h2', 'h3', 'a[class*="title"]',
             '.poly-component__title',
@@ -117,7 +120,6 @@ app.get("/ofertas", async (req, res) => {
             }
           }
 
-          // Preço atual
           const possiveisPrecos = [
             '.andes-money-amount__fraction',
             '[class*="price-tag-fraction"]',
@@ -135,7 +137,6 @@ app.get("/ofertas", async (req, res) => {
           const preco = precoTexto ?
             parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) : 0;
 
-          // Preço original (riscado)
           let precoOriginal = 0;
           const precoOriginalEl = card.querySelector(
             's .andes-money-amount__fraction, ' +
@@ -147,21 +148,18 @@ app.get("/ofertas", async (req, res) => {
             );
           }
 
-          // Desconto
           let desconto = '';
           const descontoEl = card.querySelector(
             '[class*="discount"], [class*="off"], .poly-price__discount'
           );
           if (descontoEl) desconto = descontoEl.textContent.trim();
 
-          // Parcelas
           let parcelas = '';
           const parcelasEl = card.querySelector(
             '[class*="installment"], [class*="parcela"], .poly-price__installments'
           );
           if (parcelasEl) parcelas = parcelasEl.textContent.trim();
 
-          // Avaliação
           let avaliacao = 0;
           const avaliacaoEl = card.querySelector(
             '[class*="rating"], .poly-reviews__rating'
@@ -170,7 +168,6 @@ app.get("/ofertas", async (req, res) => {
             avaliacao = parseFloat(avaliacaoEl.textContent.trim()) || 0;
           }
 
-          // Número de reviews
           let numReviews = 0;
           const reviewsEl = card.querySelector(
             '[class*="reviews__total"], [class*="rating__count"]'
@@ -179,21 +176,17 @@ app.get("/ofertas", async (req, res) => {
             numReviews = parseInt(reviewsEl.textContent.replace(/[^\d]/g, '')) || 0;
           }
 
-          // Cupom
           let cupom = '';
           const cupomEl = card.querySelector('[class*="coupon"], [class*="cupom"]');
           if (cupomEl) cupom = cupomEl.textContent.trim();
 
-          // Frete grátis
           let freteGratis = false;
           const freteEl = card.querySelector('[class*="shipping"], [class*="frete"]');
           if (freteEl) freteGratis = freteEl.textContent.toLowerCase().includes('grátis');
 
-          // Link
           const linkElement = card.querySelector('a');
           const link = linkElement ? linkElement.href : '';
 
-          // Imagem
           const imgElement = card.querySelector('img');
           const imagem = imgElement ?
             (imgElement.src || imgElement.getAttribute('data-src') || '') : '';
@@ -503,6 +496,7 @@ app.post('/mercado-oficial', async (req, res) => {
     res.status(500).json({ erro: error.message });
   }
 });
+
 // ============================================
 // ENDPOINT: BUSCAR OFERTAS AMAZON
 // ============================================
@@ -526,14 +520,12 @@ app.get("/amazon", async (req, res) => {
 
     const page = await context.newPage();
 
-    // Usa busca por categoria casa+cozinha+bem-estar
-    await page.goto("https://www.amazon.com.br/s?i=garden&bbn=16209062011&rh=n%3A16209062011%2Cn%3A17422420011&dc&ds=v1%3AZ0QK5Q&keywords=casa+cozinha&qid=1234567890&rnid=16209062011", {
+    await page.goto("https://www.amazon.com.br/s?i=garden&bbn=16209062011&rh=n%3A16209062011%2Cn%3A17422420011&dc&keywords=casa+cozinha&qid=1234567890&rnid=16209062011", {
       waitUntil: "domcontentloaded",
       timeout: 30000
     });
 
     await page.waitForTimeout(4000);
-
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
     await page.waitForTimeout(2000);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -542,57 +534,46 @@ app.get("/amazon", async (req, res) => {
     const produtos = await page.evaluate(() => {
       const items = [];
 
-      // Seletor principal de resultados de busca da Amazon
       const cards = Array.from(document.querySelectorAll(
         'div[data-component-type="s-search-result"]'
       ));
 
       cards.forEach((card, index) => {
         try {
-          // Título
           const tituloEl = card.querySelector('h2 a span, h2 span');
           const titulo = tituloEl?.textContent?.trim() || '';
 
-          // Preço inteiro
           const precoInteiroEl = card.querySelector('.a-price-whole');
           const precoFracaoEl = card.querySelector('.a-price-fraction');
           const precoInteiro = precoInteiroEl?.textContent?.replace(/[^\d]/g, '') || '0';
           const precoFracao = precoFracaoEl?.textContent?.replace(/[^\d]/g, '') || '00';
           const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
 
-          // Preço original (riscado)
           const precoOrigEl = card.querySelector('.a-text-price .a-offscreen');
           const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
           const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
 
-          // Desconto
           const descontoEl = card.querySelector('span.a-letter-space + span, [class*="savingsPercentage"]');
           const desconto = descontoEl?.textContent?.trim() || '';
 
-          // Avaliação
           const avaliacaoEl = card.querySelector('span.a-icon-alt');
           const avaliacaoTexto = avaliacaoEl?.textContent?.trim() || '';
           const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
 
-          // Número de reviews
           const reviewsEl = card.querySelector('span[aria-label*="estrelas"] + span, a[href*="customerReviews"] span');
           const num_reviews = parseInt(reviewsEl?.textContent?.replace(/[^\d]/g, '')) || 0;
 
-          // Imagem
           const imgEl = card.querySelector('img.s-image');
           const imagem = imgEl?.src || '';
 
-          // Link
           const linkEl = card.querySelector('h2 a, a.a-link-normal');
           let link = linkEl?.href || '';
           if (link && !link.startsWith('http')) {
             link = 'https://www.amazon.com.br' + link;
           }
 
-          // ASIN
           const asin = card.getAttribute('data-asin') || '';
 
-          // Frete grátis (Prime)
           const primeEl = card.querySelector('i[aria-label="Amazon Prime"], [data-testid*="prime"]');
           const frete_gratis = !!primeEl;
 
@@ -634,4 +615,82 @@ app.get("/amazon", async (req, res) => {
     console.error("❌ Erro Amazon:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
+});
+
+// ============================================
+// ENDPOINT: GERAR LINK DE AFILIADO AMAZON
+// ============================================
+app.post("/amazon-link", async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(400).json({
+        status: "erro",
+        mensagem: "URL do produto não fornecida"
+      });
+    }
+
+    if (!url.includes("amazon.com.br") && !url.includes("amzn.to")) {
+      return res.status(400).json({
+        status: "erro",
+        mensagem: "URL inválida - deve ser da Amazon Brasil"
+      });
+    }
+
+    const tag = "giseleramosde-20";
+
+    // Extrai o ASIN da URL (formato /dp/ASIN ou /gp/product/ASIN)
+    let asin = '';
+    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
+    if (asinMatch) {
+      asin = asinMatch[1] || asinMatch[2];
+    }
+
+    let urlAfiliado = '';
+
+    if (asin) {
+      // Constrói URL limpa com tag de afiliado
+      urlAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${tag}`;
+    } else {
+      // Se não encontrou ASIN, adiciona tag na URL original
+      urlAfiliado = url.includes('?')
+        ? `${url}&tag=${tag}`
+        : `${url}?tag=${tag}`;
+    }
+
+    console.log(`✅ Link Amazon gerado: ${urlAfiliado}`);
+
+    res.json({
+      status: "ok",
+      url_original: url,
+      url_afiliado: urlAfiliado,
+      asin: asin || "não encontrado",
+      tag: tag,
+      mensagem: "Link de afiliado Amazon gerado com sucesso!"
+    });
+
+  } catch (error) {
+    console.error("❌ Erro ao gerar link Amazon:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`http://localhost:${PORT}`);
+  console.log("");
+  console.log("Endpoints disponíveis:");
+  console.log("  GET  /               - Info da API");
+  console.log("  GET  /ofertas        - Buscar ofertas do dia (ML)");
+  console.log("  GET  /ofertas/:cat   - Buscar ofertas por categoria (ML)");
+  console.log("  POST /mercado-simples - Gerar link de afiliado (ML)");
+  console.log("  POST /mercado        - Gerar link (tenta encurtar) (ML)");
+  console.log("  POST /mercado-oficial - Gerar link meli.la oficial (ML)");
+  console.log("  GET  /amazon         - Buscar ofertas Amazon");
+  console.log("  POST /amazon-link    - Gerar link de afiliado Amazon");
 });
