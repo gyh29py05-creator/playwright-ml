@@ -559,117 +559,101 @@ app.post('/mercado-oficial', async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT: BUSCAR OFERTAS AMAZON (Playwright)
+// ENDPOINT: BUSCAR OFERTAS AMAZON (Multi-categoria)
 // ============================================
 app.get("/amazon", async (req, res) => {
   try {
-    console.log("🔄 Buscando ofertas Amazon...");
+    console.log("🔄 Buscando melhores produtos Amazon...");
 
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-    });
+    const token = await getCreatorsToken();
 
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      viewport: { width: 1920, height: 1080 },
-      locale: 'pt-BR',
-      extraHTTPHeaders: {
-        'Accept-Language': 'pt-BR,pt;q=0.9'
-      }
-    });
+    // Categorias e keywords variadas para produtos de qualidade
+    const buscas = [
+      { keywords: "livros mais vendidos", categoria: "Books" },
+      { keywords: "air fryer", categoria: "Kitchen" },
+      { keywords: "fone de ouvido bluetooth", categoria: "Electronics" },
+      { keywords: "aspirador de pó", categoria: "Kitchen" },
+      { keywords: "kindle", categoria: "Electronics" },
+      { keywords: "proteína whey", categoria: "HealthPersonalCare" },
+      { keywords: "cafeteira", categoria: "Kitchen" },
+      { keywords: "smartwatch", categoria: "Electronics" }
+    ];
 
-    const page = await context.newPage();
+    const todasBuscas = buscas.map(busca =>
+      fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/searchitems", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "x-marketplace": "www.amazon.com.br"
+        },
+        body: JSON.stringify({
+          keywords: busca.keywords,
+          partnerTag: AMAZON_TAG,
+          partnerType: "Associates",
+          searchIndex: busca.categoria,
+          itemCount: 5,
+          resources: [
+            "itemInfo.title",
+            "offersV2.listings.price",
+            "images.primary.medium",
+            "customerReviews.count",
+            "customerReviews.starRating"
+          ],
+          marketplace: "www.amazon.com.br",
+          languagesOfPreference: ["pt_BR"]
+        })
+      }).then(r => r.json()).catch(() => null)
+    );
 
-    await page.goto("https://www.amazon.com.br/s?i=garden&bbn=16209062011&rh=n%3A16209062011%2Cn%3A17422420011&dc&keywords=casa+cozinha&qid=1234567890&rnid=16209062011", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000
-    });
+    const resultados = await Promise.all(todasBuscas);
 
-    await page.waitForTimeout(4000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
+    let todosProdutos = [];
 
-    const produtos = await page.evaluate(() => {
-      const items = [];
+    resultados.forEach((data, i) => {
+      const itens = data?.SearchResult?.Items || [];
+      itens.forEach((item, index) => {
+        const asin = item.ASIN || '';
+        const titulo = item.ItemInfo?.Title?.DisplayValue || '';
+        const preco = item.OffersV2?.Listings?.[0]?.Price?.Amount || 0;
+        const precoFormatado = item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || '';
+        const imagem = item.Images?.Primary?.Medium?.URL || '';
+        const avaliacao = item.CustomerReviews?.StarRating?.Value || 0;
+        const numReviews = item.CustomerReviews?.Count || 0;
+        const urlAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}`;
 
-      const cards = Array.from(document.querySelectorAll(
-        'div[data-component-type="s-search-result"]'
-      ));
-
-      cards.forEach((card, index) => {
-        try {
-          const tituloEl = card.querySelector('h2 a span, h2 span');
-          const titulo = tituloEl?.textContent?.trim() || '';
-
-          const precoInteiroEl = card.querySelector('.a-price-whole');
-          const precoFracaoEl = card.querySelector('.a-price-fraction');
-          const precoInteiro = precoInteiroEl?.textContent?.replace(/[^\d]/g, '') || '0';
-          const precoFracao = precoFracaoEl?.textContent?.replace(/[^\d]/g, '') || '00';
-          const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
-
-          const precoOrigEl = card.querySelector('.a-text-price .a-offscreen');
-          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
-          const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-
-          const descontoEl = card.querySelector('span.a-letter-space + span, [class*="savingsPercentage"]');
-          const desconto = descontoEl?.textContent?.trim() || '';
-
-          const avaliacaoEl = card.querySelector('span.a-icon-alt');
-          const avaliacaoTexto = avaliacaoEl?.textContent?.trim() || '';
-          const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
-
-          const reviewsEl = card.querySelector('span[aria-label*="estrelas"] + span, a[href*="customerReviews"] span');
-          const num_reviews = parseInt(reviewsEl?.textContent?.replace(/[^\d]/g, '')) || 0;
-
-          const imgEl = card.querySelector('img.s-image');
-          const imagem = imgEl?.src || '';
-
-          const linkEl = card.querySelector('h2 a, a.a-link-normal');
-          let link = linkEl?.href || '';
-          if (link && !link.startsWith('http')) {
-            link = 'https://www.amazon.com.br' + link;
-          }
-
-          const asin = card.getAttribute('data-asin') || '';
-
-          const primeEl = card.querySelector('i[aria-label="Amazon Prime"], [data-testid*="prime"]');
-          const frete_gratis = !!primeEl;
-
-          if (titulo && titulo.length > 3 && preco > 0) {
-            items.push({
-              titulo,
-              preco,
-              preco_original,
-              desconto,
-              avaliacao,
-              num_reviews,
-              imagem,
-              link,
-              asin,
-              frete_gratis,
-              posicao: index + 1
-            });
-          }
-        } catch (e) {
-          console.error(`Erro no card ${index}:`, e.message);
+        // Filtra apenas produtos com boa avaliação e preço real
+        if (titulo && preco > 0 && avaliacao >= 4) {
+          todosProdutos.push({
+            asin,
+            titulo,
+            preco,
+            preco_formatado: precoFormatado,
+            imagem,
+            avaliacao,
+            num_reviews: numReviews,
+            categoria: buscas[i].keywords,
+            url_afiliado: urlAfiliado,
+            frete_gratis: false
+          });
         }
       });
-
-      return items;
     });
 
-    await browser.close();
+    // Ordena pelos mais bem avaliados e com mais reviews
+    todosProdutos.sort((a, b) => {
+      const scoreA = a.avaliacao * Math.log(a.num_reviews + 1);
+      const scoreB = b.avaliacao * Math.log(b.num_reviews + 1);
+      return scoreB - scoreA;
+    });
 
-    console.log(`✅ Amazon: ${produtos.length} produtos extraídos`);
+    console.log(`✅ Amazon: ${todosProdutos.length} produtos de qualidade encontrados`);
 
     res.json({
       status: "ok",
-      total: produtos.length,
+      total: todosProdutos.length,
       data_extracao: new Date().toISOString(),
-      produtos
+      produtos: todosProdutos
     });
 
   } catch (error) {
