@@ -84,7 +84,14 @@ app.get("/", (req, res) => {
 // ============================================
 // ENDPOINT: BUSCAR OFERTAS DO DIA (GERAL) - ML
 // ============================================
-app.get("/ofertas", async (req, res) => {
+const produtos = await page.evaluate(() => {
+  const items = [];
+  
+  // DEBUG - ver quantos cards achou
+  const teste = document.querySelectorAll('[da-eid]');
+  console.log('CARDS ENCONTRADOS:', teste.length);
+  
+  const seletores = [app.get("/ofertas", async (req, res) => {
   try {
     console.log("🔄 Buscando ofertas do dia...");
     const browser = await chromium.launch({
@@ -162,7 +169,14 @@ app.get("/ofertas", async (req, res) => {
       });
       return items;
     });
-
+const debugInfo = await page.evaluate(() => {
+  return {
+    cards_da_eid: document.querySelectorAll('[da-eid]').length,
+    url_atual: window.location.href,
+    titulo_pagina: document.title
+  };
+});
+console.log('DEBUG INFO:', JSON.stringify(debugInfo));
     await browser.close();
     console.log(`✅ Extraídos ${produtos.length} produtos`);
     if (produtos.length === 0) {
