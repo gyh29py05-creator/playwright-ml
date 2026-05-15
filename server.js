@@ -503,7 +503,185 @@ app.post('/mercado-oficial', async (req, res) => {
     res.status(500).json({ erro: error.message });
   }
 });
+// ============================================
+// ENDPOINT: BUSCAR OFERTAS AMAZON
+// ============================================
+app.get("/amazon", async (req, res) => {
+  try {
+    console.log("🔄 Buscando ofertas Amazon...");
 
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+    });
+
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR'
+    });
+
+    const page = await context.newPage();
+
+    await page.goto("https://www.amazon.com.br/deals", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+
+    await page.waitForTimeout(4000);
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(2000);
+
+    const produtos = await page.evaluate(() => {
+      const items = [];
+
+      const cards = Array.from(document.querySelectorAll(
+        '[data-testid="deal-card"], div[class*="DealCard"], div[class*="dealCard"], ' +
+        'div[class*="Grid-module"], li[class*="grid"]'
+      ));
+
+      cards.forEach((card, index) => {
+        try {
+          // Título
+          const tituloEl = card.querySelector(
+            '[class*="truncate"], [class*="title"], h2, h3, span[class*="DealTitle"]'
+          );
+          const titulo = tituloEl?.textContent?.trim() || '';
+
+          // Preço atual
+          const precoEl = card.querySelector(
+            'span[class*="price"], [data-testid="price"], ' +
+            '.a-price .a-offscreen, span[class*="Price"]'
+          );
+          const precoTexto = precoEl?.textContent?.trim() || '';
+          const preco = parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+
+          // Preço original
+          const precoOrigEl = card.querySelector(
+            'span[class*="listPrice"], [class*="originalPrice"], ' +
+            '.a-text-price .a-offscreen'
+          );
+          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
+          const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+
+          // Desconto
+          const descontoEl = card.querySelector(
+            '[class*="discount"], [class*="Discount"], [class*="badge"], span[class*="savings"]'
+          );
+          const desconto = descontoEl?.textContent?.trim() || '';
+
+          // Avaliação
+          const avaliacaoEl = card.querySelector('[class*="rating"], .a-icon-alt');
+          const avaliacao = parseFloat(avaliacaoEl?.textContent?.trim()) || 0;
+
+          // Reviews
+          const reviewsEl = card.querySelector('[class*="review"], [class*="Rating"]');
+          const num_reviews = parseInt(reviewsEl?.textContent?.replace(/[^\d]/g, '')) || 0;
+
+          // Imagem
+          const imgEl = card.querySelector('img');
+          const imagem = imgEl?.src || imgEl?.getAttribute('data-src') || '';
+
+          // Link
+          const linkEl = card.querySelector('a');
+          let link = linkEl?.href || '';
+          if (link && !link.startsWith('http')) {
+            link = 'https://www.amazon.com.br' + link;
+          }
+
+          // ASIN (código do produto)
+          const asinMatch = link.match(/\/dp\/([A-Z0-9]{10})/);
+          const asin = asinMatch ? asinMatch[1] : '';
+
+          if (titulo && titulo.length > 3) {
+            items.push({
+              titulo,
+              preco,
+              preco_original,
+              desconto,
+              avaliacao,
+              num_reviews,
+              imagem,
+              link,
+              asin,
+              posicao: index + 1
+            });
+          }
+        } catch (e) {
+          console.error(`Erro no card ${index}:`, e.message);
+        }
+      });
+
+      return items;
+    });
+
+    await browser.close();
+
+    console.log(`✅ Amazon: ${produtos.length} produtos extraídos`);
+
+    res.json({
+      status: "ok",
+      total: produtos.length,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
+
+  } catch (error) {
+    console.error("❌ Erro Amazon:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ENDPOINT: GERAR LINK AFILIADO AMAZON
+// ============================================
+app.post("/amazon-link", async (req, res) => {
+  try {
+    const { url, asin } = req.body;
+    const tag = "giseleramosde-20";
+
+    if (!url && !asin) {
+      return res.status(400).json({ status: "erro", mensagem: "Informe url ou asin" });
+    }
+
+    // Extrai ASIN da URL se não foi passado direto
+    let codigoAsin = asin;
+    if (!codigoAsin && url) {
+      const match = url.match(/\/dp\/([A-Z0-9]{10})/);
+      codigoAsin = match ? match[1] : null;
+    }
+
+    if (codigoAsin) {
+      // Link curto oficial amzn.to
+      const linkAfiliado = `https://www.amazon.com.br/dp/${codigoAsin}?tag=${tag}`;
+      return res.json({
+        status: "ok",
+        url_original: url || '',
+        url_afiliado: linkAfiliado,
+        asin: codigoAsin,
+        tag
+      });
+    }
+
+    // Fallback: adiciona tag na URL original
+    const linkFallback = url.includes('?')
+      ? `${url}&tag=${tag}`
+      : `${url}?tag=${tag}`;
+
+    res.json({
+      status: "ok",
+      url_original: url,
+      url_afiliado: linkFallback,
+      tag
+    });
+
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
