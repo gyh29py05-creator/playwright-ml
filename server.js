@@ -675,6 +675,7 @@ app.get("/amazon", async (req, res) => {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+
 // ============================================
 // ENDPOINT: GERAR LINK DE AFILIADO AMAZON
 // ============================================
