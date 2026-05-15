@@ -526,8 +526,21 @@ await page.waitForTimeout(3000);
 await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 await page.waitForTimeout(3000);
 await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-await page.waitForTimeout(3000);
+// Fechar popup se aparecer
+try {
+  await page.click('[class*="close"], [class*="Close"], .sui-popup-close, button[class*="close"]', { timeout: 5000 });
+  console.log('✅ Popup fechado!');
+  await page.waitForTimeout(1000);
+} catch(e) {
+  console.log('ℹ️ Nenhum popup encontrado');
+}
 
+await page.evaluate(() => window.scrollTo(0, 0));
+await page.waitForTimeout(1000);
+await page.screenshot({ path: '/tmp/shein-debug.png' });
+console.log('📸 Screenshot salvo!');
+
+const produtos = await page.evaluate(() => {
 await page.screenshot({ path: '/tmp/shein-debug.png' }); // ← ADICIONA AQUI
 console.log('📸 Screenshot salvo!');
 
