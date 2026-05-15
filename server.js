@@ -559,22 +559,11 @@ app.post('/mercado-oficial', async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT: BUSCAR OFERTAS AMAZON (Multi-categoria)
+// ENDPOINT: BUSCAR OFERTAS AMAZON (Playwright)
 // ============================================
 app.get("/amazon", async (req, res) => {
   try {
-    console.log("🔄 Buscando melhores produtos Amazon...");
-
-    const categorias = [
-      { url: "https://www.amazon.com.br/s?k=livros+mais+vendidos&i=stripbooks", nome: "Livros" },
-      { url: "https://www.amazon.com.br/s?k=air+fryer&i=kitchen", nome: "Eletrodomésticos" },
-      { url: "https://www.amazon.com.br/s?k=fone+de+ouvido+bluetooth&i=electronics", nome: "Eletrônicos" },
-      { url: "https://www.amazon.com.br/s?k=smartwatch&i=electronics", nome: "Eletrônicos" },
-      { url: "https://www.amazon.com.br/s?k=whey+protein&i=hpc", nome: "Saúde" },
-      { url: "https://www.amazon.com.br/s?k=cafeteira&i=kitchen", nome: "Eletrodomésticos" },
-      { url: "https://www.amazon.com.br/s?k=kindle&i=electronics", nome: "Eletrônicos" },
-      { url: "https://www.amazon.com.br/s?k=aspirador+de+po&i=kitchen", nome: "Eletrodomésticos" }
-    ];
+    console.log("🔄 Buscando ofertas Amazon...");
 
     const browser = await chromium.launch({
       headless: true,
@@ -584,93 +573,108 @@ app.get("/amazon", async (req, res) => {
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       viewport: { width: 1920, height: 1080 },
-      locale: 'pt-BR'
+      locale: 'pt-BR',
+      extraHTTPHeaders: {
+        'Accept-Language': 'pt-BR,pt;q=0.9'
+      }
     });
 
-    let todosProdutos = [];
+    const page = await context.newPage();
 
-    for (const categoria of categorias) {
-      try {
-        console.log(`📦 Buscando: ${categoria.nome} - ${categoria.url}`);
-        const page = await context.newPage();
+    await page.goto("https://www.amazon.com.br/s?k=casa+e+decoracao&i=home&bbn=16209062011&rh=n%3A16209062011&dc&ref=sr_nr_n_1", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
 
-        await page.goto(categoria.url, {
-          waitUntil: "domcontentloaded",
-          timeout: 20000
-        });
+    await page.waitForTimeout(4000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(2000);
 
-        await page.waitForTimeout(2000);
+    const produtos = await page.evaluate(() => {
+      const items = [];
+      const cards = Array.from(document.querySelectorAll(
+        'div[data-component-type="s-search-result"]'
+      ));
 
-        const produtos = await page.evaluate((cat, tag) => {
-          const items = [];
-          const cards = Array.from(document.querySelectorAll('div[data-component-type="s-search-result"]'));
+      cards.forEach((card, index) => {
+        try {
+          const tituloEl = card.querySelector('h2 a span, h2 span');
+          const titulo = tituloEl?.textContent?.trim() || '';
 
-          cards.slice(0, 5).forEach((card, index) => {
-            try {
-              const tituloEl = card.querySelector('h2 a span, h2 span');
-              const titulo = tituloEl?.textContent?.trim() || '';
+          const precoInteiroEl = card.querySelector('.a-price-whole');
+          const precoFracaoEl = card.querySelector('.a-price-fraction');
+          const precoInteiro = precoInteiroEl?.textContent?.replace(/[^\d]/g, '') || '0';
+          const precoFracao = precoFracaoEl?.textContent?.replace(/[^\d]/g, '') || '00';
+          const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
 
-              const precoInteiroEl = card.querySelector('.a-price-whole');
-              const precoFracaoEl = card.querySelector('.a-price-fraction');
-              const precoInteiro = precoInteiroEl?.textContent?.replace(/[^\d]/g, '') || '0';
-              const precoFracao = precoFracaoEl?.textContent?.replace(/[^\d]/g, '') || '00';
-              const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
+          const precoOrigEl = card.querySelector('.a-text-price .a-offscreen');
+          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
+          const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
 
-              const avaliacaoEl = card.querySelector('span.a-icon-alt');
-              const avaliacaoTexto = avaliacaoEl?.textContent?.trim() || '';
-              const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
+          const descontoEl = card.querySelector('span.a-letter-space + span, [class*="savingsPercentage"]');
+          const desconto = descontoEl?.textContent?.trim() || '';
 
-              const reviewsEl = card.querySelector('[aria-label*="estrelas"] + span a span, .a-size-base.s-underline-text');
-              const num_reviews = parseInt(reviewsEl?.textContent?.replace(/[^\d]/g, '')) || 0;
+          const avaliacaoEl = card.querySelector('span.a-icon-alt');
+          const avaliacaoTexto = avaliacaoEl?.textContent?.trim() || '';
+          const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
 
-              const imgEl = card.querySelector('img.s-image');
-              const imagem = imgEl?.src || '';
+          const reviewsEl = card.querySelector('span[aria-label*="estrelas"] + span, a[href*="customerReviews"] span');
+          const num_reviews = parseInt(reviewsEl?.textContent?.replace(/[^\d]/g, '')) || 0;
 
-              const linkEl = card.querySelector('h2 a');
-              let link = linkEl?.href || '';
-              if (link && !link.startsWith('http')) {
-                link = 'https://www.amazon.com.br' + link;
-              }
+          const imgEl = card.querySelector('img.s-image');
+          const imagem = imgEl?.src || '';
 
-              const asin = card.getAttribute('data-asin') || '';
-              const urlAfiliado = asin ? `https://www.amazon.com.br/dp/${asin}?tag=${tag}` : link;
+          const linkEl = card.querySelector('h2 a, a.a-link-normal');
+          let link = linkEl?.href || '';
+          if (link && !link.startsWith('http')) {
+            link = 'https://www.amazon.com.br' + link;
+          }
 
-              const precoOrigEl = card.querySelector('.a-text-price .a-offscreen');
-              const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
-              const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+          const asin = card.getAttribute('data-asin') || '';
+          const primeEl = card.querySelector('i[aria-label="Amazon Prime"], [data-testid*="prime"]');
+          const frete_gratis = !!primeEl;
 
-              const descontoEl = card.querySelector('[class*="savingsPercentage"]');
-              const desconto = descontoEl?.textContent?.trim() || '';
+          if (titulo && titulo.length > 3 && preco > 0) {
+            items.push({
+              titulo,
+              preco,
+              preco_original,
+              desconto,
+              avaliacao,
+              num_reviews,
+              imagem,
+              link,
+              asin,
+              frete_gratis,
+              posicao: index + 1
+            });
+          }
+        } catch (e) {
+          console.error(`Erro no card ${index}:`, e.message);
+        }
+      });
 
-              if (titulo && preco > 0 && avaliacao >= 4) {
-                items.push({
-                  titulo,
-                  preco,
-                  preco_original,
-                  desconto,
-                  avaliacao,
-                  num_reviews,
-                  imagem,
-                  link: urlAfiliado,
-                  asin,
-                  categoria: cat,
-                  frete_gratis: false
-                });
-              }
-            } catch (e) {}
-          });
+      return items;
+    });
 
-          return items;
-        }, categoria.nome, AMAZON_TAG);
+    await browser.close();
 
-        todosProdutos = todosProdutos.concat(produtos);
-        await page.close();
+    console.log(`✅ Amazon: ${produtos.length} produtos extraídos`);
 
-      } catch (e) {
-        console.log(`⚠️ Erro na categoria ${categoria.nome}:`, e.message);
-      }
-    }
+    res.json({
+      status: "ok",
+      total: produtos.length,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
 
+  } catch (error) {
+    console.error("❌ Erro Amazon:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
     await browser.close();
 
     // Ordena pelos mais bem avaliados
