@@ -525,7 +525,13 @@ await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
 await page.waitForTimeout(3000);
 await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 await page.waitForTimeout(3000);
+await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await page.waitForTimeout(3000);
 
+await page.screenshot({ path: '/tmp/shein-debug.png' }); // ← ADICIONA AQUI
+console.log('📸 Screenshot salvo!');
+
+const produtos = await page.evaluate(() => {
     const produtos = await page.evaluate(() => {
       const items = [];
       const cards = Array.from(document.querySelectorAll('.bsc-cart-item-mini__wrap'));
