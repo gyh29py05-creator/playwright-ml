@@ -780,8 +780,14 @@ app.post("/shein-link", async (req, res) => {
 });
 
 // ============================================================
-// ENDPOINT: SEGUIR CREATOR NO TIKTOK
-// Adicione esse bloco no seu server.js
+// ENDPOINT: SEGUIR CREATOR NO TIKTOK (versão corrigida)
+// 
+// INSTRUÇÕES:
+// 1. No GitHub, abre o server.js
+// 2. Apaga TUDO a partir da linha onde começa o primeiro
+//    "// ENDPOINT: SEGUIR CREATOR NO TIKTOK" até o
+//    "// INICIAR SERVIDOR"
+// 3. Cola esse bloco no lugar
 // ============================================================
 
 app.post("/tiktok/seguir", async (req, res) => {
@@ -791,65 +797,124 @@ app.post("/tiktok/seguir", async (req, res) => {
     return res.status(400).json({ status: "erro", mensagem: "username não fornecido" });
   }
 
-  // Limpa o username (aceita @username ou username)
   const user = username.startsWith("@") ? username.slice(1) : username;
   const url  = `https://www.tiktok.com/@${user}`;
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-blink-features=AutomationControlled"],
-  });
+  console.log("═══════════════════════════════════════");
+  console.log(`[TikTok] Iniciando: @${user}`);
+  console.log("═══════════════════════════════════════");
 
+  let browser;
   try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--single-process"
+      ],
+    });
+
+    console.log("[TikTok] 1/6 Browser aberto");
+
+    const authExists = fs.existsSync(AUTH_FILE);
+    console.log(`[TikTok] 2/6 auth.json existe: ${authExists}`);
+
     const context = await browser.newContext({
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       viewport: { width: 1920, height: 1080 },
       locale: "pt-BR",
-      storageState: fs.existsSync(AUTH_FILE) ? AUTH_FILE : undefined,
+      storageState: authExists ? AUTH_FILE : undefined,
     });
 
     const page = await context.newPage();
 
-    // Mascara automação
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     });
 
-    console.log(`[TikTok] Abrindo perfil: ${url}`);
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    console.log(`[TikTok] 3/6 Navegando para: ${url}`);
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-    // Espera humana inicial (3-6 segundos)
-    await page.waitForTimeout(3000 + Math.random() * 3000);
+    const titulo = await page.title();
+    const urlFinal = page.url();
+    console.log(`[TikTok] 4/6 Página carregada | Título: ${titulo} | URL: ${urlFinal}`);
 
-    // Verifica se perfil existe
-    const perfilExiste = await page.$('h1[data-e2e="user-title"]') !== null;
-    if (!perfilExiste) {
-      await browser.close();
-      return res.json({ status: "ignorado", mensagem: "Perfil não encontrado ou privado", username });
+    // Screenshot para debug
+    await page.screenshot({ path: "/app/tiktok-debug.png" });
+    console.log("[TikTok] 4/6 Screenshot salvo");
+
+    // Aguarda um pouco para carregar dinâmico
+    await page.waitForTimeout(3000);
+
+    // Lista todos os botões para debug
+    const botoes = await page.$$eval("button", btns =>
+      btns.map(b => ({ texto: b.innerText?.trim(), e2e: b.getAttribute("data-e2e") }))
+    );
+    console.log(`[TikTok] 5/6 Botões encontrados: ${JSON.stringify(botoes)}`);
+
+    // Tenta encontrar botão de seguir com múltiplos seletores
+    const seletores = [
+      'button[data-e2e="follow-button"]',
+      'button[data-e2e="follow-btn"]',
+      'button[data-e2e="followBtn"]',
+    ];
+
+    let botaoSeguir = null;
+    for (const sel of seletores) {
+      botaoSeguir = await page.$(sel);
+      if (botaoSeguir) {
+        console.log(`[TikTok] 5/6 Botão encontrado com seletor: ${sel}`);
+        break;
+      }
     }
 
-    // Verifica se já segue
-    const botaoSeguir = await page.$('button[data-e2e="follow-button"]');
+    // Fallback: procura botão pelo texto
+    if (!botaoSeguir) {
+      console.log("[TikTok] 5/6 Tentando fallback por texto...");
+      const todosOsBotoes = await page.$$("button");
+      for (const btn of todosOsBotoes) {
+        const texto = await btn.innerText().catch(() => "");
+        if (texto.toLowerCase() === "seguir" || texto.toLowerCase() === "follow") {
+          botaoSeguir = btn;
+          console.log(`[TikTok] 5/6 Botão encontrado pelo texto: "${texto}"`);
+          break;
+        }
+      }
+    }
+
     if (!botaoSeguir) {
       await browser.close();
-      return res.json({ status: "ignorado", mensagem: "Já segue ou botão não encontrado", username });
+      return res.json({
+        status: "ignorado",
+        mensagem: "Botão de seguir não encontrado — verifique o screenshot",
+        debug: { titulo, urlFinal, botoes },
+        username: `@${user}`,
+      });
     }
 
     const textoBotao = await botaoSeguir.innerText();
-    if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following")) {
+    console.log(`[TikTok] 5/6 Texto do botão: "${textoBotao}"`);
+
+    if (
+      textoBotao.toLowerCase().includes("seguindo") ||
+      textoBotao.toLowerCase().includes("following") ||
+      textoBotao.toLowerCase().includes("amigos")
+    ) {
       await browser.close();
-      return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username });
+      return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
     }
 
-    // Scroll leve para parecer humano
+    // Scroll humano e clica
     await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 300));
     await page.waitForTimeout(1000 + Math.random() * 2000);
-
-    // Clica em seguir
     await botaoSeguir.click();
-    console.log(`[TikTok] ✅ Seguiu: @${user}`);
 
-    // Espera humana pós-follow (2-4 segundos)
+    console.log(`[TikTok] 6/6 ✅ Seguiu: @${user}`);
+
     await page.waitForTimeout(2000 + Math.random() * 2000);
 
     // Às vezes curte o primeiro vídeo (50% de chance)
@@ -858,8 +923,6 @@ app.post("/tiktok/seguir", async (req, res) => {
       if (primeiroVideo) {
         await primeiroVideo.click();
         await page.waitForTimeout(2000 + Math.random() * 3000);
-
-        // Curte o vídeo
         const botaoLike = await page.$('button[data-e2e="like-icon"]');
         if (botaoLike) {
           await botaoLike.click();
@@ -878,170 +941,24 @@ app.post("/tiktok/seguir", async (req, res) => {
     });
 
   } catch (error) {
-    await browser.close();
-    console.error(`[TikTok] Erro ao seguir @${user}:`, error.message);
-    return res.status(500).json({ status: "erro", mensagem: error.message, username });
+    if (browser) await browser.close();
+    console.error(`[TikTok] ERRO: ${error.message}`);
+    return res.status(500).json({ status: "erro", mensagem: error.message, username: `@${user}` });
   }
 });
 
-// ==========================================
-// ENDPOINT /tiktok/seguir - VERSÃO DEBUG
-// Substitua no server.js a partir da linha ~900
-// ==========================================
-
-app.post('/tiktok/seguir', async (req, res) => {
-  const { username } = req.body;
-  
-  if (!username) {
-    return res.status(400).json({ erro: 'Username obrigatório' });
-  }
-
-  console.log('═══════════════════════════════════════════════════════');
-  console.log('[INÍCIO] Requisição para seguir:', username);
-  console.log('═══════════════════════════════════════════════════════');
-
-  const url = `https://www.tiktok.com/${username}`;
-  let context;
-  let page;
-
-  try {
-    // ========== ETAPA 1: Criar contexto ==========
-    console.log('[DEBUG 1/7] Criando contexto do navegador...');
-    context = await browser.newContext({ 
-      storageState: 'auth.json',
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    });
-    console.log('✓ Contexto criado com sucesso');
-
-    // ========== ETAPA 2: Criar página ==========
-    console.log('[DEBUG 2/7] Criando nova página...');
-    page = await context.newPage();
-    console.log('✓ Página criada');
-
-    // ========== ETAPA 3: Navegar ==========
-    console.log('[DEBUG 3/7] Navegando para:', url);
-    console.log('[DEBUG 3/7] Timeout configurado: 60 segundos');
-    
-    const startNav = Date.now();
-    await page.goto(url, { 
-      waitUntil: 'domcontentloaded', 
-      timeout: 60000 
-    });
-    const navTime = Date.now() - startNav;
-    
-    console.log(`✓ Navegação concluída em ${navTime}ms`);
-    console.log('[DEBUG 3/7] URL final:', page.url());
-    console.log('[DEBUG 3/7] Título da página:', await page.title());
-
-    // ========== ETAPA 4: Screenshot ==========
-    console.log('[DEBUG 4/7] Tirando screenshot...');
-    await page.screenshot({ 
-      path: '/app/tiktok-debug.png',
-      fullPage: false 
-    });
-    console.log('✓ Screenshot salvo em /app/tiktok-debug.png');
-
-    // ========== ETAPA 5: Procurar botão ==========
-    console.log('[DEBUG 5/7] Procurando botão de seguir...');
-    console.log('[DEBUG 5/7] Seletores:', 'button[data-e2e="follow-button"], button[data-e2e="follow-btn"]');
-    
-    const btnSeguir = await page.$('button[data-e2e="follow-button"], button[data-e2e="follow-btn"]');
-    
-    if (!btnSeguir) {
-      console.log('⚠ Botão de seguir NÃO encontrado');
-      console.log('[DEBUG 5/7] Listando todos os botões na página...');
-      
-      const allButtons = await page.$$eval('button', buttons => 
-        buttons.map(btn => ({
-          text: btn.innerText?.substring(0, 50),
-          dataE2e: btn.getAttribute('data-e2e'),
-          class: btn.className
-        }))
-      );
-      
-      console.log('[DEBUG 5/7] Botões encontrados:', JSON.stringify(allButtons, null, 2));
-      
-      // Salvar HTML para análise
-      const html = await page.content();
-      console.log('[DEBUG 5/7] Primeiros 500 chars do HTML:', html.substring(0, 500));
-      
-      await context.close();
-      return res.json({ 
-        status: 'ignorado', 
-        razao: 'Botão de seguir não encontrado',
-        debug: {
-          urlFinal: page.url(),
-          titulo: await page.title(),
-          totalBotoes: allButtons.length
-        }
-      });
-    }
-
-    // ========== ETAPA 6: Verificar se já segue ==========
-    console.log('✓ Botão encontrado! Verificando estado...');
-    const btnText = await btnSeguir.textContent();
-    console.log('[DEBUG 6/7] Texto do botão:', btnText?.trim());
-
-    if (!btnText || btnText.toLowerCase().includes('following') || btnText.toLowerCase().includes('seguindo')) {
-      console.log('⚠ Usuário já está sendo seguido');
-      await context.close();
-      return res.json({ 
-        status: 'ignorado', 
-        razao: 'Já segue este perfil',
-        textoBtn: btnText 
-      });
-    }
-
-    // ========== ETAPA 7: Clicar no botão ==========
-    console.log('[DEBUG 7/7] Clicando no botão de seguir...');
-    await btnSeguir.click();
-    await page.waitForTimeout(2000);
-    console.log('✓ Botão clicado com sucesso');
-
-    await context.close();
-    
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('[SUCESSO] Perfil seguido:', username);
-    console.log('═══════════════════════════════════════════════════════');
-    
-    return res.json({ 
-      status: 'seguido', 
-      usuario: username 
-    });
-
-  } catch (error) {
-    console.error('╔═══════════════════════════════════════════════════════╗');
-    console.error('║                  ERRO CRÍTICO                         ║');
-    console.error('╚═══════════════════════════════════════════════════════╝');
-    console.error('[ERRO] Tipo:', error.name);
-    console.error('[ERRO] Mensagem:', error.message);
-    console.error('[ERRO] Stack:', error.stack);
-    
-    if (context) await context.close();
-    
-    return res.status(500).json({ 
-      erro: error.message,
-      tipo: error.name,
-      stack: error.stack.split('\n').slice(0, 3).join('\n')
-    });
-  }
-});
-
-// ==========================================
-// ENDPOINT AUXILIAR: /tiktok/screenshot
-// (já deve existir, mas garantir que está correto)
-// ==========================================
-
-app.get('/tiktok/screenshot', (req, res) => {
-  const fs = require('fs');
-  const path = '/app/tiktok-debug.png';
-  
-  if (fs.existsSync(path)) {
-    res.sendFile(path);
+// ============================================================
+// ENDPOINT: VER SCREENSHOT DO TIKTOK
+// ============================================================
+app.get("/tiktok-screenshot", (req, res) => {
+  const arquivo = "/app/tiktok-debug.png";
+  if (fs.existsSync(arquivo)) {
+    res.sendFile(arquivo);
   } else {
-    res.status(404).json({ erro: 'Screenshot não encontrado' });
+    res.json({ status: "erro", mensagem: "Screenshot não encontrado. Chame /tiktok/seguir primeiro." });
   }
 });
+
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
