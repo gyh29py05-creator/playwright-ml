@@ -746,6 +746,31 @@ app.get("/debug-screenshot", (req, res) => {
     res.json({ status: "erro", mensagem: "Screenshot não encontrado. Chame /shein primeiro." });
   }
 });
+// ============================================
+// ENDPOINT: GERAR LINK AFILIADO SHEIN
+// ============================================
+app.post("/shein-link", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ status: "erro", mensagem: "url obrigatória" });
+
+    const response = await fetch("https://m.shein.com/br/affiliate/api/share/link/from/url", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cookie": "memberId=1180825914; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://br.shein.com/"
+      },
+      body: JSON.stringify({ uid: "1180825914", url })
+    });
+
+    const data = await response.json();
+    res.json({ status: "ok", data });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
 
 // ============================================
 // INICIAR SERVIDOR
