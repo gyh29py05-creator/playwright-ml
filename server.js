@@ -566,8 +566,8 @@ app.get("/shein", async (req, res) => {
     });
 
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(6000);
+await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+    await page.waitForTimeout(15000);
 
     // Fechar popup se aparecer
     try {
