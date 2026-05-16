@@ -99,10 +99,14 @@ app.get("/ofertas", async (req, res) => {
     const page = await context.newPage();
     await page.goto("https://www.mercadolivre.com.br/ofertas", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
+    // Scroll progressivo para carregar mais produtos
+for (let i = 1; i <= 5; i++) {
+  await page.evaluate((step) => {
+    window.scrollTo(0, (document.body.scrollHeight / 5) * step);
+  }, i);
+  await page.waitForTimeout(2000);
+}
+await page.waitForTimeout(3000);
 
     const produtos = await page.evaluate(() => {
       const items = [];
