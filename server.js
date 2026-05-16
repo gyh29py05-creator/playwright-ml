@@ -567,7 +567,7 @@ app.get("/shein", async (req, res) => {
 
     const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(12000);
+    await page.waitForTimeout(6000);
 
     // Fechar popup se aparecer
     try {
@@ -599,12 +599,7 @@ app.get("/shein", async (req, res) => {
 
     const produtos = await page.evaluate(() => {
       const items = [];
- 
-  // DEBUG - ver quantos cards achou
-  const teste = document.querySelectorAll('[da-eid]');
-  console.log('CARDS ENCONTRADOS:', teste.length);
-  
-  const seletores = [
+
       // Tenta múltiplos seletores
       const seletores = [
         '[da-eid]',
@@ -682,14 +677,7 @@ app.get("/shein", async (req, res) => {
 
       return items;
     });
-const debugInfo = await page.evaluate(() => {
-  return {
-    cards_da_eid: document.querySelectorAll('[da-eid]').length,
-    url_atual: window.location.href,
-    titulo_pagina: document.title
-  };
-});
-console.log('DEBUG INFO:', JSON.stringify(debugInfo));
+
     await browser.close();
 
     const bugs = produtos.filter(p => p.possivel_bug);
