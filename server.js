@@ -43,11 +43,11 @@ const TIKTOK_COOKIES = [
   { name: "ssid_ucp_v1", value: "1.0.1-KGMzNmVhOTBjNmVmMDQ0NTVkNjRjMDM2Y2Q0ZmU4NDc3ODUyMjdhZTIKIgiBiIaa67OG-WkQq8Oh0AYYswsgDDCus8jPBjgHQPQHSAQQAxoDbXkyIiA4YTQ2N2QxOTU0OWViODAwOTJlOGUzZjU5M2IzZGRiMzJOCiDtfpaagunVwqVoBM25A7r9pIj2v5T7RqFkrR8SjV57YRIg3yte8750JR7E8T8aa3u0THU1IkDFf7VvVChDDE4qHTMYAyIGdGlrdG9r", domain: ".tiktok.com", path: "/" },
   { name: "tt_session_tlb_tag", value: "sttt%7C1%7CikZ9GVSeuACS6OP1k7Pds__________BewklyPf1DKtTcQlzGzrbQOorRrwF-IdqVUOPW3c3yv4%3D", domain: ".tiktok.com", path: "/" },
   { name: "odin_tt", value: "14a8adcacc53aea3c4ee7ea6cb959dc07b5ac4fc82ecc6278741effd4679d8a0e79aab001ff4ea5239f7edb7da65ce323deb715e7bc5912066eea457d882c93ee79b214542d17d497949a37edcc56d52", domain: ".tiktok.com", path: "/" },
-  { name: "msToken", value: "16Ikfmb8PrnLXLeKovrLKgUSCkvaAAUSqbxCgmiIIRhLQ-DDvuXbQXLqdO8Jj3YWO5eZD_gfdn7N4DxBAu6OmGH_joNKl1DufKxRWPWASLWAlbLA3KxfEGw2D7t-b42MSmJ_2sQh4qdAW3c=", domain: ".tiktok.com", path: "/" }
-{ name: "store-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
-{ name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
-{ name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
-{ name: "timezone_name", value: "America%2FSao_Paulo", domain: ".tiktok.com", path: "/" }
+  { name: "msToken", value: "16Ikfmb8PrnLXLeKovrLKgUSCkvaAAUSqbxCgmiIIRhLQ-DDvuXbQXLqdO8Jj3YWO5eZD_gfdn7N4DxBAu6OmGH_joNKl1DufKxRWPWASLWAlbLA3KxfEGw2D7t-b42MSmJ_2sQh4qdAW3c=", domain: ".tiktok.com", path: "/" },
+  { name: "store-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
+  { name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
+  { name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
+  { name: "timezone_name", value: "America%2FSao_Paulo", domain: ".tiktok.com", path: "/" }
 ];
 
 // ============================================
@@ -86,10 +86,9 @@ async function getCreatorsToken() {
 // FUNÇÃO AUXILIAR: LANÇAR BROWSER COM STEALTH
 // ============================================
 async function abrirBrowser() {
-  const { chromium: chromiumPlaywright } = require("playwright");
-  return await chromiumPlaywright.launch({
+  return await chromium.launch({
     headless: true,
-    executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || chromiumPlaywright.executablePath(),
+    executablePath: require("playwright").chromium.executablePath(),
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
