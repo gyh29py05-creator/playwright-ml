@@ -400,34 +400,113 @@ app.post("/tiktok/seguir", async (req, res) => {
     const page = await criarPaginaTikTok(browser);
     await page.goto(`https://www.tiktok.com/@${user}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForTimeout(8000);
-    await page.mouse.move(500, 300); await page.waitForTimeout(1000);
-    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
+    await page.mouse.move(500, 300);
+    await page.waitForTimeout(1000);
     await fecharModais(page);
+    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
 
+    // ✅ SELETOR CORRETO: botão Follow do HEADER do perfil, não dos suggested accounts
+    // O header do perfil fica dentro de [data-e2e="user-page-follow-button"]
+    // ou dentro do container [data-e2e="user-info-container"]
     let botaoSeguir = null;
-    for (const sel of ['button[data-e2e="follow-button"]', 'button[data-e2e="follow-btn"]', 'button[data-e2e="followBtn"]']) { botaoSeguir = await page.$(sel); if (botaoSeguir) break; }
-    if (!botaoSeguir) { for (const btn of await page.$$("button")) { const t = await btn.innerText().catch(() => ""); if (t.toLowerCase() === "seguir" || t.toLowerCase() === "follow") { botaoSeguir = btn; break; } } }
 
-    if (!botaoSeguir) { await browser.close(); return res.json({ status: "ignorado", mensagem: "Botão de seguir não encontrado", username: `@${user}` }); }
+    // Tentativa 1: seletor específico do header do perfil
+    for (const sel of [
+      '[data-e2e="user-page-follow-button"]',
+      '[data-e2e="follow-button"][aria-label*="${user}"]',
+      'div[data-e2e="user-info-container"] button[data-e2e="follow-button"]',
+      'div[class*="ShareLayoutHeader"] button[data-e2e="follow-button"]',
+      'div[class*="user-page"] button[data-e2e="follow-button"]',
+    ]) {
+      botaoSeguir = await page.$(sel);
+      if (botaoSeguir) {
+        console.log(`[TikTok] Botão encontrado com seletor: ${sel}`);
+        break;
+      }
+    }
 
-    const textoBotao = await botaoSeguir.innerText();
-    if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following")) { await browser.close(); return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` }); }
+    // Tentativa 2: pegar TODOS os botões Follow e pegar o PRIMEIRO que está no topo da página
+    // (acima de y=400px para evitar os suggested accounts que ficam abaixo)
+    if (!botaoSeguir) {
+      const todosBotoes = await page.$$('button[data-e2e="follow-button"]');
+      for (const btn of todosBotoes) {
+        const box = await btn.boundingBox();
+        if (box && box.y < 400) { // header do perfil fica no topo
+          botaoSeguir = btn;
+          console.log(`[TikTok] Botão encontrado por posição Y=${box.y}`);
+          break;
+        }
+      }
+    }
 
-    await page.evaluate(() => window.scrollBy(0, 200));
-    await page.waitForTimeout(1200);
+    // Tentativa 3: buscar por texto dentro do header (container específico)
+    if (!botaoSeguir) {
+      const resultado = await page.evaluate(() => {
+        // Pega o header do perfil — fica antes da seção de sugestões
+        const headerSelectors = [
+          'div[class*="DivShareLayoutHeaderAction"]',
+          'div[class*="user-page-header"]',
+          'div[class*="UserPage"] > div:first-child',
+        ];
+        for (const sel of headerSelectors) {
+          const container = document.querySelector(sel);
+          if (container) {
+            const btns = container.querySelectorAll('button');
+            for (const btn of btns) {
+              const texto = btn.innerText.toLowerCase();
+              if (texto === 'seguir' || texto === 'follow') return true;
+            }
+          }
+        }
+        return false;
+      });
+      if (resultado) {
+        botaoSeguir = await page.$('div[class*="DivShareLayoutHeaderAction"] button, div[class*="user-page-header"] button');
+      }
+    }
+
+    if (!botaoSeguir) {
+      await browser.close();
+      return res.json({ status: "ignorado", mensagem: "Botão de seguir não encontrado no perfil", username: `@${user}` });
+    }
+
+    // Verifica se já segue
+    const textoBotao = await botaoSeguir.innerText().catch(() => "");
+    console.log(`[TikTok] Texto do botão: "${textoBotao}"`);
+    if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following")) {
+      await browser.close();
+      return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
+    }
+
+    // Scroll suave e clique via JS (contorna pointer-events do overlay)
+    await page.evaluate(() => window.scrollTo(0, 0)); // volta ao topo para ter certeza
+    await page.waitForTimeout(800);
+    await fecharModais(page); // tenta fechar modal de novo antes do clique
     await page.evaluate((el) => el.click(), botaoSeguir);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
+
+    // Verifica se realmente seguiu
+    const textoPosClique = await botaoSeguir.innerText().catch(() => "");
+    console.log(`[TikTok] Texto após clique: "${textoPosClique}"`);
+
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
     console.log(`[TikTok] ✅ Seguiu @${user}`);
     await browser.close();
-    return res.json({ status: "ok", mensagem: `Seguiu @${user} com sucesso`, username: `@${user}` });
+
+    const confirmado = textoPosClique.toLowerCase().includes("seguindo") || textoPosClique.toLowerCase().includes("following");
+    return res.json({
+      status: "ok",
+      mensagem: `Seguiu @${user} com sucesso`,
+      username: `@${user}`,
+      confirmado,
+      botao_texto: textoPosClique
+    });
   } catch (error) {
     if (browser) await browser.close();
     console.error(`[TikTok] ERRO: ${error.message}`);
     return res.status(500).json({ status: "erro", mensagem: error.message, username: `@${user}` });
   }
 });
-
 // ============================================
 // ROTA: CURTIR VÍDEOS DE UM CREATOR NO TIKTOK
 // Body: { "username": "@usuario", "quantidade": 3 }
