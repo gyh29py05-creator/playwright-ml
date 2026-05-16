@@ -95,7 +95,7 @@ async function abrirBrowser() {
       "--disable-blink-features=AutomationControlled",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--single-process",
+
       "--disable-dbus",
       "--no-zygote",
       "--disable-features=TranslateUI,BlinkGenPropertyTrees",
