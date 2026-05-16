@@ -572,15 +572,16 @@ app.post("/tiktok/seguir", async (req, res) => {
       return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
     }
 
-    // Fecha captcha se aparecer antes de clicar
-    try {
-      const captchaClose = await page.$('button[aria-label="Close"], [class*="captcha-close"], .captcha_verify_bar--close');
-      if (captchaClose) {
-        await captchaClose.click();
-        console.log("[TikTok] Captcha fechado!");
-        await page.waitForTimeout(2000);
-      }
-    } catch(e) {}
+   // Fecha modal/captcha se aparecer antes de clicar
+try {
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(1000);
+  const captchaClose = await page.$('[class*="TUXModal"] button[aria-label="Close"], [class*="TUXModal"] button, button[aria-label="Close"]');
+  if (captchaClose) {
+    await captchaClose.click();
+    await page.waitForTimeout(1000);
+  }
+} catch(e) {}
 
     // Simula comportamento humano antes de clicar
     await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
