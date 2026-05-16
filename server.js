@@ -47,7 +47,8 @@ const TIKTOK_COOKIES = [
 { name: "store-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
 { name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
 { name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
-{ name: "timezone_name", value: "America%2FSao_Paulo", domain: ".tiktok.com", path: "/" },];
+{ name: "timezone_name", value: "America%2FSao_Paulo", domain: ".tiktok.com", path: "/" }
+];
 
 // ============================================
 // TOKEN AMAZON CREATORS API
