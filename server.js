@@ -82,9 +82,10 @@ async function getCreatorsToken() {
 // FUNÇÃO AUXILIAR: LANÇAR BROWSER COM STEALTH
 // ============================================
 async function abrirBrowser() {
-  return await chromium.launch({
+  const { chromium: chromiumPlaywright } = require("playwright");
+  return await chromiumPlaywright.launch({
     headless: true,
-   executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || require("playwright").chromium.executablePath(),
+    executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || chromiumPlaywright.executablePath(),
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
