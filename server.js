@@ -935,15 +935,14 @@ app.post("/tiktok/seguir", async (req, res) => {
     }
 
     // Verifica se já segue
-    const botaoSeguir = await page.$('button[data-e2e="follow-button"]');
+const botaoSeguir = await page.$('button[data-e2e="follow-button"], button[data-e2e="follow-btn"]');
     if (!botaoSeguir) {
       await browser.close();
       return res.json({ status: "ignorado", mensagem: "Já segue ou botão não encontrado", username });
     }
 
     const textoBotao = await botaoSeguir.innerText();
-    if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following")) {
-      await browser.close();
+    if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following") || textoBotao.toLowerCase().includes("amigos")) {
       return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username });
     }
 
