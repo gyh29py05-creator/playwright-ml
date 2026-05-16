@@ -20,16 +20,16 @@ const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
 const CREATORS_CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 
-// ============================================
+ // ============================================
 // COOKIES DO TIKTOK (atualizados 16/05/2026)
 // ============================================
 const TIKTOK_COOKIES = [
   { name: "delay_guest_mode_vid", value: "5", domain: ".tiktok.com", path: "/" },
   { name: "csrf_session_id", value: "0d00ca977216b72d7bedd2025c68cf5d", domain: ".tiktok.com", path: "/" },
-  { name: "msToken", value: "3s5xvMaAmIT__AqeREjLy6GR3Yaa9ydnLGM_txgmO_TXeZhSSItyIeQJRyO7mLKuo0E2b0s4J0Tq39sIR1i5NsAh82oTRJxKz_djMSjG1PFLCwc7B8B1qox2AILtXJ90RvWM24hpTt8eI14=", domain: ".tiktok.com", path: "/" },
+  { name: "msToken", value: "xKtq158VdY-EAaBiQ36BhlgkYChFgG5xGU_eRMG7V-7OKuPfic1v0CJCozawBTBYKDen6HUmSXxsbE5oOcvvRuJNNMTNzUWxLj4Qfr6gtiH9EWuhf3PUFYVeSD1B49fmBQW5V1QRR-RiFAI=", domain: ".tiktok.com", path: "/" },
   { name: "tt_session_tlb_tag", value: "sttt%7C2%7CbbVnxN6Oz4q50ffsCI28Lv________-mWCxEitg9e1VsOecUz2m5zeWvh0Fe9GwXDwpJwOU6tWU%3D", domain: ".tiktok.com", path: "/" },
   { name: "sid_guard", value: "6db567c4de8ecf8ab9d1f7ec088dbc2e%7C1778971816%7C15552000%7CThu%2C+12-Nov-2026+22%3A50%3A16+GMT", domain: ".tiktok.com", path: "/" },
-  { name: "ttwid", value: "1%7CDQCkOWjH-OZvFdBtE87cPnUIlLQRspfKE2MKDjB2fgM%7C1778971821%7Cfdc5e37ce78c01c617d7e7fff90916a1e447d516f73d50863de3081c574e38f2", domain: ".tiktok.com", path: "/" },
+  { name: "ttwid", value: "1%7CDQCkOWjH-OZvFdBtE87cPnUIlLQRspfKE2MKDjB2fgM%7C1778974619%7Ce01e1e856caa7a78b9f1ad8839750b87f416ad4b275802f040701eb2cf704329", domain: ".tiktok.com", path: "/" },
   { name: "uid_tt", value: "c7d40b6ca685810af459bee32373205e0b033bc23f7776b5c4f5cd8acf966543", domain: ".tiktok.com", path: "/" },
   { name: "uid_tt_ss", value: "c7d40b6ca685810af459bee32373205e0b033bc23f7776b5c4f5cd8acf966543", domain: ".tiktok.com", path: "/" },
   { name: "passport_csrf_token", value: "981f81810312de1423936c841f0b4afe", domain: ".tiktok.com", path: "/" },
@@ -46,9 +46,13 @@ const TIKTOK_COOKIES = [
   { name: "tt_chain_token", value: "oe5Yl/GgqqzePSSaHElF8A==", domain: ".tiktok.com", path: "/" },
   { name: "tt_csrf_token", value: "fMWbLlP0-bWNFgfrqY75qGjQbytPs6rzPsDs", domain: ".tiktok.com", path: "/" },
   { name: "_ttp", value: "3DRa9EVRr1RMt7h1r6VYkwMNaWx", domain: ".tiktok.com", path: "/" },
-  { name: "tiktok_webapp_theme", value: "dark", domain: ".tiktok.com", path: "/" }
+  { name: "tiktok_webapp_theme", value: "dark", domain: ".tiktok.com", path: "/" },
+  { name: "odin_tt", value: "ce23cc159a3d124ec3e3de38a5a6e6cceb56af1a3e8fbd03c1964e4ee05a7056193f26d39da4af379960d1e92185430afc13535cdd0f9fce780ce9daa4d31f89f3f0a4e33d43eaae4394eed2a43f5d85", domain: ".tiktok.com", path: "/" },
+  { name: "passport_auth_status", value: "c0ae6aa2cb58dc8bef68721746f47a68%2C8ffdf5d767910d17e2b45c951c6cd032", domain: ".tiktok.com", path: "/" },
+  { name: "store-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
+  { name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
+  { name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" }
 ];
-
 // ============================================
 // TOKEN AMAZON CREATORS API
 // ============================================
