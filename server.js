@@ -823,13 +823,15 @@ app.post("/tiktok/seguir", async (req, res) => {
     const authExists = fs.existsSync(AUTH_FILE);
     console.log(`[TikTok] 2/6 auth.json existe: ${authExists}`);
 
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport: { width: 1920, height: 1080 },
-      locale: "pt-BR",
-      storageState: authExists ? AUTH_FILE : undefined,
-    });
+    const cookiesData = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
 
+const context = await browser.newContext({
+  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  viewport: { width: 1920, height: 1080 },
+  locale: "pt-BR",
+});
+
+await context.addCookies(cookiesData.cookies);
     const page = await context.newPage();
 
     await page.addInitScript(() => {
