@@ -959,7 +959,8 @@ await page.screenshot({
 // ENDPOINT: VER SCREENSHOT DO TIKTOK
 // ============================================================
 app.get("/tiktok-screenshot", (req, res) => {
-  const arquivo = "/app/tiktok-debug.png";
+  res.sendFile(path.resolve("/app/tiktok-debug.png"));
+});
   if (fs.existsSync(arquivo)) {
     res.sendFile(arquivo);
   } else {
