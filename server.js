@@ -941,7 +941,10 @@ await context.addCookies(cookiesData.cookies);
       mensagem: `Seguiu @${user} com sucesso`,
       username: `@${user}`,
     });
-
+await page.screenshot({
+  path: "/app/tiktok-debug.png",
+  fullPage: true
+});
   } catch (error) {
     if (browser) await browser.close();
     console.error(`[TikTok] ERRO: ${error.message}`);
