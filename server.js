@@ -2,8 +2,7 @@
 // IMPORTS E CONFIGURAÇÃO INICIAL
 // ============================================
 const express = require("express");
-const { chromium } = require("playwright-extra");
-const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
