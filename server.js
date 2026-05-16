@@ -88,21 +88,18 @@ async function getCreatorsToken() {
 async function abrirBrowser() {
   return await chromium.launch({
     headless: true,
-    executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || require("playwright").chromium.executablePath(),
+    executablePath: require("playwright").chromium.executablePath(),
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-
-      "--disable-dbus",
-      "--no-zygote",
-      "--disable-features=TranslateUI,BlinkGenPropertyTrees",
-      "--use-gl=swiftshader"
+      "--single-process"
     ]
   });
 }
+
 // ============================================
 // ROTA: INFO DA API
 // ============================================
@@ -575,11 +572,24 @@ app.post("/tiktok/seguir", async (req, res) => {
       return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
     }
 
+    // Fecha captcha se aparecer antes de clicar
+    try {
+      const captchaClose = await page.$('button[aria-label="Close"], [class*="captcha-close"], .captcha_verify_bar--close');
+      if (captchaClose) {
+        await captchaClose.click();
+        console.log("[TikTok] Captcha fechado!");
+        await page.waitForTimeout(2000);
+      }
+    } catch(e) {}
+
     // Simula comportamento humano antes de clicar
     await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
     await page.waitForTimeout(1000 + Math.random() * 1500);
-    await botaoSeguir.click();
+    await botaoSeguir.click({ force: true });
     await page.waitForTimeout(2000);
+
+    // Screenshot depois do clique
+    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
 
     console.log(`[TikTok] ✅ Seguiu @${user}`);
     await browser.close();
