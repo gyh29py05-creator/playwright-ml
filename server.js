@@ -922,6 +922,7 @@ app.post("/tiktok/seguir", async (req, res) => {
 
     console.log(`[TikTok] Abrindo perfil: ${url}`);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.screenshot({ path: '/app/tiktok-debug.png' });
 
     // Espera humana inicial (3-6 segundos)
     await page.waitForTimeout(3000 + Math.random() * 3000);
