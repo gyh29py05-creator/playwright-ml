@@ -565,6 +565,39 @@ app.get("/shein", async (req, res) => {
       locale: 'pt-BR'
     });
 
+  // Adicionar cookies da Shein (login)
+await context.addCookies([
+  {
+    name: 'memberId',
+    value: '1180825914',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'AT',
+    value: 'MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'cf_clearance',
+    value: '29_m.tjJTI28tvBqR15x.1tLdNCPj4uAwwVOD1O05bo-1778890425-1.2.1.1-KEi4p3v21FU5hkQ2wJ9FnEqKYZqGHtAdyzKcbqMB7imnmUdnu3Gj6cnEKI0SidchJcuwn7ssSO0sdOWqe5RqAydwxH4dde_CZvzvnnb0TeawKS0PtB5QWiwyH5FBjOjK3m4ROfw_2qCXwygX9cBI87ZT5YCdOO4mHiBjEAt8O.e_rS5lVKzwrnYxnuohn8ZBcfMrRp.gWSPxXdsh_z6rj67jvaoZAR4g9opZSjWV.zFDoCoY4.rDV1v_PaqNZM2MbJj8IF3nkoHe7AAhOCbsfhpyb4x9vHCjzP.itOjRdfCkjro56BIg61G7uWDDQ7KypIvXmXdhCYvVAoN4Hr6j1g',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'sessionID_shein',
+    value: 's%3A7S7sthaovE_Sy9eCpmLnzrOlwWc0Fwmi.37UHrLYj4Eq6Bfxhb4gOBJOuPly4kkpD32FjScputO4',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'armorUuid',
+    value: '2026051605285157efa2e475111728c96c6d64d94744ee00036ba3c3ded99e00',
+    domain: '.shein.com',
+    path: '/'
+  }
+]);
     const page = await context.newPage();
 await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
     await page.waitForTimeout(15000);
