@@ -988,6 +988,15 @@ const botaoSeguir = await page.$('button[data-e2e="follow-button"], button[data-
     return res.status(500).json({ status: "erro", mensagem: error.message, username });
   }
 });
+// ENDPOINT: Ver screenshot do TikTok
+app.get("/tiktok-screenshot", (req, res) => {
+  const file = "/app/tiktok-debug.png";
+  if (fs.existsSync(file)) {
+    res.sendFile(file);
+  } else {
+    res.json({ status: "erro", mensagem: "Screenshot não encontrado ainda. Chame /tiktok/seguir primeiro." });
+  }
+});
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
