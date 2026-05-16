@@ -2,10 +2,13 @@
 // IMPORTS E CONFIGURAÇÃO INICIAL
 // ============================================
 const express = require("express");
-const { chromium } = require("playwright");
+const { chromium } = require("playwright-extra");
+const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
+
+chromium.use(StealthPlugin());
 
 const app = express();
 app.use(express.json());
@@ -87,14 +90,12 @@ async function abrirBrowser() {
     headless: true,
     executablePath: require("playwright").chromium.executablePath(),
     args: [
-     "--no-sandbox",
-  "--disable-setuid-sandbox",
-  "--disable-blink-features=AutomationControlled",
-  "--disable-dev-shm-usage",
-  "--disable-gpu",
-  "--single-process",
-  "--disable-dbus",
-  "--no-zygote"
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process"
     ]
   });
 }
@@ -267,11 +268,7 @@ app.get("/amazon", async (req, res) => {
 
     async function extrairAmazon(url, origem) {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-     await page.waitForTimeout(8000);
-await page.mouse.move(500, 300);
-await page.waitForTimeout(1000);
-await page.mouse.move(600, 400);
-await page.waitForTimeout(1000);
+      await page.waitForTimeout(4000);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(2000);
       return await page.evaluate((origem) => {
@@ -512,10 +509,22 @@ app.post("/tiktok/seguir", async (req, res) => {
 
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
+      Object.defineProperty(navigator, "languages", { get: () => ["pt-BR", "pt", "en"] });
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) =>
+        parameters.name === "notifications"
+          ? Promise.resolve({ state: Notification.permission })
+          : originalQuery(parameters);
+      window.chrome = { runtime: {} };
     });
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(8000);
+    await page.mouse.move(500, 300);
+    await page.waitForTimeout(1000);
+    await page.mouse.move(600, 400);
+    await page.waitForTimeout(1000);
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
 
     const titulo = await page.title();
