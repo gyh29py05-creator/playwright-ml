@@ -267,7 +267,11 @@ app.get("/amazon", async (req, res) => {
 
     async function extrairAmazon(url, origem) {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await page.waitForTimeout(4000);
+     await page.waitForTimeout(8000);
+await page.mouse.move(500, 300);
+await page.waitForTimeout(1000);
+await page.mouse.move(600, 400);
+await page.waitForTimeout(1000);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(2000);
       return await page.evaluate((origem) => {
