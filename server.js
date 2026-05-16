@@ -84,7 +84,7 @@ async function getCreatorsToken() {
 async function abrirBrowser() {
   return await chromium.launch({
     headless: true,
-    executablePath: require("playwright").chromium.executablePath(),
+   executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || require("playwright").chromium.executablePath(),
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
