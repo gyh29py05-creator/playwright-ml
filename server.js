@@ -26,8 +26,8 @@ const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const TIKTOK_COOKIES = [
   { name: "tt_csrf_token", value: "fMWbLlP0-bWNFgfrqY75qGjQbytPs6rzPsDs", domain: ".tiktok.com", path: "/" },
   { name: "tt_chain_token", value: "oe5Yl/GgqqzePSSaHElF8A==", domain: ".tiktok.com", path: "/" },
-  { name: "tiktok_webapp_theme", value: "light", domain: ".www.tiktok.com", path: "/" },
-  { name: "delay_guest_mode_vid", value: "5", domain: ".www.tiktok.com", path: "/" },
+  { name: "tiktok_webapp_theme", value: "light", domain: ".tiktok.com", path: "/" },
+  { name: "delay_guest_mode_vid", value: "5", domain: ".tiktok.com", path: "/" },
   { name: "_ttp", value: "3DRa9EVRr1RMt7h1r6VYkwMNaWx", domain: ".tiktok.com", path: "/" },
   { name: "ttwid", value: "1%7CDQCkOWjH-OZvFdBtE87cPnUIlLQRspfKE2MKDjB2fgM%7C1778961523%7C8ba8836958689d7509e6e60db7aeddd87648fd8609e9ea7845c2d88c0671c89a", domain: ".tiktok.com", path: "/" },
   { name: "passport_csrf_token", value: "981f81810312de1423936c841f0b4afe", domain: ".tiktok.com", path: "/" },
@@ -44,7 +44,10 @@ const TIKTOK_COOKIES = [
   { name: "tt_session_tlb_tag", value: "sttt%7C1%7CikZ9GVSeuACS6OP1k7Pds__________BewklyPf1DKtTcQlzGzrbQOorRrwF-IdqVUOPW3c3yv4%3D", domain: ".tiktok.com", path: "/" },
   { name: "odin_tt", value: "14a8adcacc53aea3c4ee7ea6cb959dc07b5ac4fc82ecc6278741effd4679d8a0e79aab001ff4ea5239f7edb7da65ce323deb715e7bc5912066eea457d882c93ee79b214542d17d497949a37edcc56d52", domain: ".tiktok.com", path: "/" },
   { name: "msToken", value: "16Ikfmb8PrnLXLeKovrLKgUSCkvaAAUSqbxCgmiIIRhLQ-DDvuXbQXLqdO8Jj3YWO5eZD_gfdn7N4DxBAu6OmGH_joNKl1DufKxRWPWASLWAlbLA3KxfEGw2D7t-b42MSmJ_2sQh4qdAW3c=", domain: ".tiktok.com", path: "/" }
-];
+{ name: "store-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
+{ name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
+{ name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
+{ name: "timezone_name", value: "America%2FSao_Paulo", domain: ".tiktok.com", path: "/" },];
 
 // ============================================
 // TOKEN AMAZON CREATORS API
