@@ -89,12 +89,14 @@ async function abrirBrowser() {
     headless: true,
     executablePath: require("playwright").chromium.executablePath(),
     args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process"
+     "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-blink-features=AutomationControlled",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--single-process",
+  "--disable-dbus",
+  "--no-zygote"
     ]
   });
 }
