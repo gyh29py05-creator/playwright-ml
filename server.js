@@ -592,24 +592,27 @@ app.post("/tiktok/seguir", async (req, res) => {
     } catch(e) {}
 
     // Simula comportamento humano antes de clicar
-    await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
-    await page.waitForTimeout(1000 + Math.random() * 1500);
-    await page.mouse.move(300, 400);
+await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
+
+await page.waitForTimeout(1000 + Math.random() * 1500);
+
+await page.mouse.move(300, 400);
 await page.waitForTimeout(1000);
 
 await page.mouse.move(500, 500);
 await page.waitForTimeout(1000);
 
+await page.waitForTimeout(1500 + Math.random() * 2000);
+
 await botaoSeguir.hover();
-await page.waitForTimeout(2000);
+
+await page.waitForTimeout(2000 + Math.random() * 2000);
 
 await botaoSeguir.click({
   delay: 150
 });
 
 await page.waitForTimeout(5000);
-    await page.waitForTimeout(2000);
-
     // Screenshot depois do clique
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
 
