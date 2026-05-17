@@ -139,8 +139,11 @@ app.get("/ofertas", async (req, res) => {
       locale: "pt-BR"
     });
     const page = await context.newPage();
-    await page.goto("https://www.mercadolivre.com.br/ofertas?container_id=MLB773331-2&filter_applied=container_id&filter_position=14&is_recommended_domain=false&origin=scut",
+    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574#filter_applied=category&filter_position=4&origin=qcat",
 {
+  waitUntil: "domcontentloaded",
+  timeout: 30000
+});
   waitUntil: "domcontentloaded",
   timeout: 30000
 });
