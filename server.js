@@ -254,12 +254,7 @@ app.post("/tiktok/cookies", (req, res) => {
   }).filter(c => c.name && c.value);
 
   // Apaga o perfil salvo para forçar reinjeção com cookies novos
-  try {
-    if (fs.existsSync(PERFIL_PATH)) {
-      fs.rmSync(PERFIL_PATH, { recursive: true, force: true });
-      console.log("[TikTok] Perfil antigo removido para reinjeção de cookies");
-    }
-  } catch(e) {}
+ 
 
   console.log(`[TikTok] Cookies atualizados via API: ${cookiesCustom.length} cookies`);
   res.json({
