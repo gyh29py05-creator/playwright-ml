@@ -506,8 +506,9 @@ app.get("/bugs/shein", async (req, res) => {
       }
       cards.forEach((card, index) => {
         try {
-          const eid = card.getAttribute("da-eid") || "";
-          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
+          const linkEl = card.querySelector("a[href*='/p-'], a[href*='.html']");
+          const linkRaw = linkEl ? linkEl.href : "";
+          const link = linkRaw && linkRaw.includes("shein.com") ? linkRaw.split("?")[0] : "";
           const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
           const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
           const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
@@ -798,8 +799,13 @@ app.get("/shein", async (req, res) => {
         }
         cards.forEach((card) => {
           try {
-            const eid = card.getAttribute("da-eid") || "";
-            const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
+            // Pega o href real do link do produto
+            const linkEl = card.querySelector("a[href*='/p-'], a[href*='.html']");
+            const linkRaw = linkEl ? linkEl.href : "";
+            // Garante que é link da Shein e remove parâmetros desnecessários
+            const link = linkRaw && linkRaw.includes("shein.com") 
+              ? linkRaw.split("?")[0] 
+              : "";
 
             const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
 
