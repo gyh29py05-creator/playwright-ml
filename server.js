@@ -709,22 +709,39 @@ app.post("/amazon-produto", async (req, res) => {
 
 // ============================================
 // ROTA: BUSCAR PRODUTOS SHEIN
+// Busca camisetas + linho + conjuntos numa lista única, ~50 produtos
 // ============================================
 app.get("/shein", async (req, res) => {
   try {
-    const { categoria = "moda" } = req.query;
-    const urls = {
-      "moda":           "https://br.shein.com/Women-Clothing-sc-017172961.html",
-      "moda-feminina":  "https://br.shein.com/Women-Clothing-sc-017172961.html",
-      "moda-masculina": "https://br.shein.com/Men-Clothing-sc-00864889.html",
-      "maquiagem":      "https://br.shein.com/Beauty-cat-1954.html?sort=7",
-      "aesthetics":     "https://br.shein.com/Women-Y2K-cat-2467.html?sort=7",
-      "camisetas":      "https://br.shein.com/Women-Tops-cat-1738.html?sort=7",
-      "linho":          "https://br.shein.com/Women-Linen-cat-3007.html?sort=7",
-      "casa":           "https://br.shein.com/Home-cat-1766.html?sort=7",
-      "promocao":       "https://br.shein.com/promotion/flash-sale"
-    };
-    const url = urls[categoria] || urls["moda"];
+    // Categorias curadas: camisetas bonitas, linho e conjuntos femininos
+    const categoriasCuradas = [
+      { nome: "camisetas", url: "https://br.shein.com/Women-Tops-cat-1738.html?sort=7" },
+      { nome: "linho",     url: "https://br.shein.com/Women-Linen-cat-3007.html?sort=7" },
+      { nome: "conjuntos", url: "https://br.shein.com/Women-Two-piece-Outfits-cat-1885.html?sort=7" }
+    ];
+
+    // Palavras que indicam produto ruim / título SEO spam
+    const palavrasRuins = [
+      "sutiã", "sutia", "cueca", "lingerie", "calcinha", "bralette",
+      "push up", "sem alça", "transparente", "sexy", "hot",
+      "frases", "estampa de letra", "amou primeiro"
+    ];
+
+    // Limpa título: remove barras, aspas escapadas e limita tamanho
+    function limparTitulo(titulo) {
+      return titulo
+        .replace(/\\"/g, '"')
+        .replace(/\\/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .substring(0, 80);
+    }
+
+    // Filtra produtos ruins pelo título
+    function produtoBom(titulo) {
+      const t = titulo.toLowerCase();
+      return !palavrasRuins.some(p => t.includes(p));
+    }
 
     const browser = await abrirBrowser();
     const context = await browser.newContext({
@@ -740,44 +757,78 @@ app.get("/shein", async (req, res) => {
     ]);
 
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(8000);
+    const todosProdutos = [];
 
-    try {
-      await page.click('[class*="close"], .sui-popup-close', { timeout: 3000 });
-    } catch (e) {}
+    for (const cat of categoriasCuradas) {
+      console.log(`[Shein] Buscando categoria: ${cat.nome}`);
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: "/tmp/shein-debug.png" });
+      await page.goto(cat.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.waitForTimeout(6000);
 
-    const produtos = await page.evaluate(() => {
-      const items = [];
-      const seletores = ["[da-eid]", ".product-item-v3", ".S-product-item", "div[class*='product-item']"];
-      let cards = [];
-      for (const sel of seletores) {
-        cards = Array.from(document.querySelectorAll(sel));
-        if (cards.length > 0) break;
+      // Fecha popup se aparecer
+      try {
+        await page.click('[class*="close"], .sui-popup-close', { timeout: 3000 });
+      } catch (e) {}
+
+      // Rola a página 8 vezes para carregar mais produtos
+      for (let i = 1; i <= 8; i++) {
+        await page.evaluate((step) => {
+          window.scrollTo(0, (document.body.scrollHeight / 8) * step);
+        }, i);
+        await page.waitForTimeout(1500);
       }
-      cards.forEach((card, index) => {
-        try {
-          const eid = card.getAttribute("da-eid") || "";
-          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
-          const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
-          const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
-          const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
-          const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
-          if (titulo && preco > 0 && link) items.push({ titulo, preco, imagem, link, posicao: index + 1 });
-        } catch (e) {}
-      });
-      return items;
-    });
 
+      await page.waitForTimeout(2000);
+
+      const itens = await page.evaluate((categoriaNome) => {
+        const items = [];
+        const seletores = ["[da-eid]", ".product-item-v3", ".S-product-item", "div[class*='product-item']"];
+        let cards = [];
+        for (const sel of seletores) {
+          cards = Array.from(document.querySelectorAll(sel));
+          if (cards.length > 0) break;
+        }
+        cards.forEach((card) => {
+          try {
+            const eid = card.getAttribute("da-eid") || "";
+            const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
+            const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
+            const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
+            const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
+            const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
+            if (titulo && preco > 0 && link) {
+              items.push({ titulo, preco, imagem, link, categoria: categoriaNome });
+            }
+          } catch (e) {}
+        });
+        return items;
+      }, cat.nome);
+
+      todosProdutos.push(...itens);
+      console.log(`[Shein] ${cat.nome}: ${itens.length} produtos encontrados`);
+    }
+
+    await page.screenshot({ path: "/tmp/shein-debug.png" });
     await browser.close();
-    res.json({ status: "ok", categoria, total: produtos.length, data_extracao: new Date().toISOString(), produtos });
+
+    // Limpa títulos, filtra ruins e deduplica por link
+    const linksSeen = new Set();
+    const produtos = todosProdutos
+      .map((p, i) => ({ ...p, titulo: limparTitulo(p.titulo), posicao: i + 1 }))
+      .filter(p => produtoBom(p.titulo))
+      .filter(p => {
+        if (linksSeen.has(p.link)) return false;
+        linksSeen.add(p.link);
+        return true;
+      });
+
+    res.json({
+      status: "ok",
+      categorias_buscadas: categoriasCuradas.map(c => c.nome),
+      total: produtos.length,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
   } catch (error) {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
