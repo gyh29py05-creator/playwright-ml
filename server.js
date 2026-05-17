@@ -1,73 +1,39 @@
-// ============================================
-// IMPORTS E CONFIGURAÇÃO INICIAL
-// ============================================
 const express = require("express");
-const { chromium } = require("playwright-extra");
-const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config();
-
-chromium.use(StealthPlugin());
 
 const app = express();
 app.use(express.json());
 
-// ============================================
-// VARIÁVEIS DE AMBIENTE
-// ============================================
-const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
+const AUTH_FILE = path.join(__dirname, "auth.json");
+
+// =====================================================
+// CREDENCIAIS CREATORS API AMAZON
+// =====================================================
+require('dotenv').config();
+
 const CREATORS_CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
+const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
 
-// ============================================
-// COOKIES DO TIKTOK (atualizados 16/05/2026)
-// ============================================
-const TIKTOK_COOKIES = [
-  { name: "delay_guest_mode_vid", value: "5", domain: ".tiktok.com", path: "/" },
-  { name: "csrf_session_id", value: "0d00ca977216b72d7bedd2025c68cf5d", domain: ".tiktok.com", path: "/" },
-  { name: "msToken", value: "xKtq158VdY-EAaBiQ36BhlgkYChFgG5xGU_eRMG7V-7OKuPfic1v0CJCozawBTBYKDen6HUmSXxsbE5oOcvvRuJNNMTNzUWxLj4Qfr6gtiH9EWuhf3PUFYVeSD1B49fmBQW5V1QRR-RiFAI=", domain: ".tiktok.com", path: "/" },
-  { name: "tt_session_tlb_tag", value: "sttt%7C2%7CbbVnxN6Oz4q50ffsCI28Lv________-mWCxEitg9e1VsOecUz2m5zeWvh0Fe9GwXDwpJwOU6tWU%3D", domain: ".tiktok.com", path: "/" },
-  { name: "sid_guard", value: "6db567c4de8ecf8ab9d1f7ec088dbc2e%7C1778971816%7C15552000%7CThu%2C+12-Nov-2026+22%3A50%3A16+GMT", domain: ".tiktok.com", path: "/" },
-  { name: "ttwid", value: "1%7CDQCkOWjH-OZvFdBtE87cPnUIlLQRspfKE2MKDjB2fgM%7C1778974619%7Ce01e1e856caa7a78b9f1ad8839750b87f416ad4b275802f040701eb2cf704329", domain: ".tiktok.com", path: "/" },
-  { name: "uid_tt", value: "c7d40b6ca685810af459bee32373205e0b033bc23f7776b5c4f5cd8acf966543", domain: ".tiktok.com", path: "/" },
-  { name: "uid_tt_ss", value: "c7d40b6ca685810af459bee32373205e0b033bc23f7776b5c4f5cd8acf966543", domain: ".tiktok.com", path: "/" },
-  { name: "passport_csrf_token", value: "981f81810312de1423936c841f0b4afe", domain: ".tiktok.com", path: "/" },
-  { name: "passport_csrf_token_default", value: "981f81810312de1423936c841f0b4afe", domain: ".tiktok.com", path: "/" },
-  { name: "s_v_web_id", value: "verify_mowwfnlp_e27BeiVT_TbmE_4BYC_9YCI_PKvKO4OeqIA8", domain: ".tiktok.com", path: "/" },
-  { name: "ssid_ucp_v1", value: "1.0.1-KDY2MWVlNDExNzZjMDdmZmUzODA5OTg2ZjgzYTRlOGQwZDgyNTExYTEKIgiBiIaa67OG-WkQqOmj0AYYswsgDDCus8jPBjgHQPQHSAQQAxoDbXkyIiA2ZGI1NjdjNGRlOGVjZjhhYjlkMWY3ZWMwODhkYmMyZTJOCiAVi8I22X5aTcwAxJMpB9IC8WY7cVZAPFj5fSma7dACjxIgf_t-wFs_MgvuvF2W8XxCPAqMQUvy407X3lFn6v2r7W4YAyIGdGlrdG9r", domain: ".tiktok.com", path: "/" },
-  { name: "cmpl_token", value: "AgQYAPNk_hfkTtK5zPc5O3NdOPOcQZ4s2X-T72Cn8o4", domain: ".tiktok.com", path: "/" },
-  { name: "multi_sids", value: "7634192487749354497%3A6db567c4de8ecf8ab9d1f7ec088dbc2e", domain: ".tiktok.com", path: "/" },
-  { name: "passport_auth_status_ss", value: "c0ae6aa2cb58dc8bef68721746f47a68%2C8ffdf5d767910d17e2b45c951c6cd032", domain: ".tiktok.com", path: "/" },
-  { name: "sessionid", value: "6db567c4de8ecf8ab9d1f7ec088dbc2e", domain: ".tiktok.com", path: "/" },
-  { name: "sessionid_ss", value: "6db567c4de8ecf8ab9d1f7ec088dbc2e", domain: ".tiktok.com", path: "/" },
-  { name: "sid_tt", value: "6db567c4de8ecf8ab9d1f7ec088dbc2e", domain: ".tiktok.com", path: "/" },
-  { name: "sid_ucp_v1", value: "1.0.1-KDY2MWVlNDExNzZjMDdmZmUzODA5OTg2ZjgzYTRlOGQwZDgyNTExYTEKIgiBiIaa67OG-WkQqOmj0AYYswsgDDCus8jPBjgHQPQHSAQQAxoDbXkyIiA2ZGI1NjdjNGRlOGVjZjhhYjlkMWY3ZWMwODhkYmMyZTJOCiAVi8I22X5aTcwAxJMpB9IC8WY7cVZAPFj5fSma7dACjxIgf_t-wFs_MgvuvF2W8XxCPAqMQUvy407X3lFn6v2r7W4YAyIGdGlrdG9r", domain: ".tiktok.com", path: "/" },
-  { name: "tt_chain_token", value: "oe5Yl/GgqqzePSSaHElF8A==", domain: ".tiktok.com", path: "/" },
-  { name: "tt_csrf_token", value: "fMWbLlP0-bWNFgfrqY75qGjQbytPs6rzPsDs", domain: ".tiktok.com", path: "/" },
-  { name: "_ttp", value: "3DRa9EVRr1RMt7h1r6VYkwMNaWx", domain: ".tiktok.com", path: "/" },
-  { name: "tiktok_webapp_theme", value: "dark", domain: ".tiktok.com", path: "/" },
-  { name: "odin_tt", value: "ce23cc159a3d124ec3e3de38a5a6e6cceb56af1a3e8fbd03c1964e4ee05a7056193f26d39da4af379960d1e92185430afc13535cdd0f9fce780ce9daa4d31f89f3f0a4e33d43eaae4394eed2a43f5d85", domain: ".tiktok.com", path: "/" },
-  { name: "passport_auth_status", value: "c0ae6aa2cb58dc8bef68721746f47a68%2C8ffdf5d767910d17e2b45c951c6cd032", domain: ".tiktok.com", path: "/" },
-  { name: "store-idc", value: "alisg", domain: ".tiktok.com", path: "/" },
-  { name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
-  { name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" }
-];
+if (!CREATORS_CLIENT_ID || !CREATORS_CLIENT_SECRET) {
+  throw new Error('⚠️ ERRO: Credenciais da Amazon não encontradas! Configure o arquivo .env');
+}
 
-// ============================================
-// COOKIES DINÂMICOS (atualizados via API)
-// ============================================
-let cookiesCustom = null;
-
-// ============================================
-// TOKEN AMAZON CREATORS API
-// ============================================
 let creatorsToken = null;
 let creatorsTokenExpiry = null;
 
+// ============================================
+// FUNÇÃO: PEGAR TOKEN CREATORS API (v3.1 LwA)
+// ============================================
 async function getCreatorsToken() {
   const agora = Date.now();
-  if (creatorsToken && creatorsTokenExpiry && agora < creatorsTokenExpiry - 60000) return creatorsToken;
+  if (creatorsToken && creatorsTokenExpiry && agora < creatorsTokenExpiry - 60000) {
+    console.log("🔑 Reutilizando token Creators API");
+    return creatorsToken;
+  }
+  console.log("🔄 Buscando novo token Creators API...");
   const body = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: CREATORS_CLIENT_ID,
@@ -79,637 +45,957 @@ async function getCreatorsToken() {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString()
   });
-  if (!response.ok) throw new Error(`Erro token Amazon: ${response.status} - ${await response.text()}`);
+  if (!response.ok) {
+    const erro = await response.text();
+    throw new Error(`Erro ao obter token: ${response.status} - ${erro}`);
+  }
   const data = await response.json();
   creatorsToken = data.access_token;
-  creatorsTokenExpiry = agora + data.expires_in * 1000;
+  creatorsTokenExpiry = agora + (data.expires_in * 1000);
+  console.log("✅ Token Creators API obtido com sucesso");
   return creatorsToken;
 }
 
 // ============================================
-// FUNÇÃO AUXILIAR: LANÇAR BROWSER COM STEALTH
-// ============================================
-async function abrirBrowser() {
-  return await chromium.launch({
-    headless: true,
-    args: [
-      "--no-sandbox", "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--disable-dev-shm-usage", "--disable-gpu",
-      "--single-process", "--no-zygote",
-      "--disable-extensions", "--disable-background-networking",
-      "--disable-default-apps"
-    ]
-  });
-}
-
-// ============================================
-// HELPER: TikTok com PERFIL PERSISTENTE
-// Salva histórico, cookies e fingerprint em disco
-// ============================================
-const PERFIL_PATH = "/app/tiktok-profile";
-
-async function getTikTokPage() {
-  // Garante que a pasta do perfil existe
-  if (!fs.existsSync(PERFIL_PATH)) {
-    fs.mkdirSync(PERFIL_PATH, { recursive: true });
-    console.log("[TikTok] Pasta de perfil criada:", PERFIL_PATH);
-  }
-
-  const context = await chromium.launchPersistentContext(PERFIL_PATH, {
-    headless: true,
-    args: [
-      "--no-sandbox", "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--disable-dev-shm-usage", "--disable-gpu",
-      "--single-process", "--no-zygote"
-    ],
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1920, height: 1080 },
-    locale: "pt-BR"
-  });
-
-  // Injeta cookies só se o perfil ainda não tem sessão salva
-  const cookiesExistentes = await context.cookies("https://www.tiktok.com");
-  const temSessao = cookiesExistentes.some(c => c.name === "sessionid");
-
-  if (!temSessao) {
-    const cookies = cookiesCustom || TIKTOK_COOKIES;
-    await context.addCookies(cookies);
-    console.log(`[TikTok] Perfil novo — ${cookies.length} cookies injetados`);
-  } else {
-    // Sempre atualiza msToken e ttwid que expiram rápido
-    const cookiesFrescos = cookiesCustom || TIKTOK_COOKIES;
-    const cookiesParaAtualizar = cookiesFrescos.filter(c =>
-      ["msToken", "ttwid", "odin_tt", "tt_csrf_token"].includes(c.name)
-    );
-    if (cookiesParaAtualizar.length > 0) {
-      await context.addCookies(cookiesParaAtualizar);
-    }
-    console.log("[TikTok] Perfil existente — sessão reutilizada");
-  }
-
-  const page = await context.newPage();
-
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
-    Object.defineProperty(navigator, "languages", { get: () => ["pt-BR", "pt", "en"] });
-    const orig = window.navigator.permissions.query;
-    window.navigator.permissions.query = (p) =>
-      p.name === "notifications" ? Promise.resolve({ state: Notification.permission }) : orig(p);
-    window.chrome = { runtime: {} };
-  });
-
-  return { context, page };
-}
-
-// ============================================
-// HELPER: página TikTok simples (para rotas não-TikTok)
-// ============================================
-async function criarPaginaTikTok(browser) {
-  const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1920, height: 1080 },
-    locale: "pt-BR"
-  });
-  await context.addCookies(cookiesCustom || TIKTOK_COOKIES);
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
-    Object.defineProperty(navigator, "languages", { get: () => ["pt-BR", "pt", "en"] });
-    const orig = window.navigator.permissions.query;
-    window.navigator.permissions.query = (p) =>
-      p.name === "notifications" ? Promise.resolve({ state: Notification.permission }) : orig(p);
-    window.chrome = { runtime: {} };
-  });
-  return page;
-}
-
-// ============================================
-// HELPER: fechar modais/overlays TikTok
-// ============================================
-async function fecharModais(page) {
-  try { await page.keyboard.press("Escape"); await page.waitForTimeout(800); } catch(e) {}
-  try {
-    const btn = await page.$('[class*="TUXModal"] button[aria-label="Close"], [class*="TUXModal"] button[aria-label="Fechar"], button[aria-label="Close"], [class*="modal-close"]');
-    if (btn) { await btn.click({ force: true }); await page.waitForTimeout(800); }
-  } catch(e) {}
-  try {
-    await page.evaluate(() => {
-      document.querySelectorAll('[class*="TUXModal-overlay"], [class*="TUXModal"], [class*="modal-overlay"], [class*="Modal-overlay"]').forEach(el => el.remove());
-    });
-  } catch(e) {}
-}
-
-// ============================================
-// ROTA: INFO DA API
+// ROTA PRINCIPAL - INFO DA API
 // ============================================
 app.get("/", (req, res) => {
   res.json({
-    status: "online", versao: "10.0",
+    status: "online",
+    mensagem: "Playwright API - Sistema de Afiliados ML + Amazon + Shein",
+    versao: "6.0",
     endpoints: {
-      "GET /ofertas": "Busca ofertas do dia (Mercado Livre)",
-      "GET /ofertas/:categoria": "Busca ofertas por categoria (ML)",
-      "POST /mercado-simples": "Gera link de afiliado ML simples",
-      "POST /mercado-oficial": "Gera link meli.la oficial (ML)",
-      "GET /amazon": "Busca ofertas Amazon",
-      "POST /amazon-link": "Gera link de afiliado Amazon",
-      "POST /amazon-buscar": "Busca produtos via Creators API",
-      "POST /amazon-produto": "Detalhes de produto por ASIN",
-      "GET /shein": "Busca produtos Shein (?categoria=moda)",
-      "POST /shein-link": "Gera link de afiliado Shein",
-      "POST /tiktok/seguir": "Segue um creator no TikTok",
-      "POST /tiktok/curtir": "Curte vídeos de um creator { username, quantidade }",
-      "POST /tiktok/cookies": "Atualiza cookies TikTok sem redeploy { senha, cookies }",
-      "GET /tiktok/cookies/status": "Ver status dos cookies atuais",
-      "GET /tiktok-screenshot": "Ver último screenshot do TikTok",
-      "GET /debug-screenshot": "Ver último screenshot Shein"
+      ofertas: "GET /ofertas - Busca todas as ofertas do dia (ML)",
+      ofertas_categoria: "GET /ofertas/:categoria - Busca ofertas de uma categoria (ML)",
+      mercado_simples: "POST /mercado-simples - Gera link de afiliado rápido (ML)",
+      mercado: "POST /mercado - Gera link de afiliado (tenta encurtar) (ML)",
+      mercado_oficial: "POST /mercado-oficial - Gera link meli.la oficial (ML)",
+      amazon: "GET /amazon - Busca ofertas Amazon (nacionais + internacionais)",
+      amazon_link: "POST /amazon-link - Gera link de afiliado Amazon",
+      amazon_buscar: "POST /amazon-buscar - Busca produtos via Creators API",
+      amazon_produto: "POST /amazon-produto - Pega detalhes de produto por ASIN via Creators API",
+      shein: "GET /shein?categoria=moda - Busca produtos Shein",
+      shein_categorias: "Categorias: moda, moda-feminina, moda-masculina, maquiagem, aesthetics, camisetas, linho, promocao",
+      tiktok_seguir: "POST /tiktok/seguir - Segue um creator no TikTok",
+      tiktok_screenshot: "GET /tiktok/screenshot - Ver último screenshot do TikTok",
+      debug_screenshot: "GET /debug-screenshot - Ver último screenshot do Playwright"
     }
   });
 });
 
 // ============================================
-// ROTA: ATUALIZAR COOKIES TIKTOK SEM REDEPLOY
-// POST /tiktok/cookies
-// Body: { "senha": "gyh2024", "cookies": "sessionid=xxx; msToken=yyy; ..." }
-// ============================================
-app.post("/tiktok/cookies", (req, res) => {
-  const { cookies, senha } = req.body;
-  if (senha !== (process.env.ADMIN_SENHA || "gyh2024")) {
-    return res.status(401).json({ status: "erro", mensagem: "Senha incorreta" });
-  }
-  if (!cookies) {
-    return res.status(400).json({ status: "erro", mensagem: "cookies não fornecido" });
-  }
-  cookiesCustom = cookies.split(";").map(c => {
-    const [nome, ...resto] = c.trim().split("=");
-    return {
-      name: nome.trim(),
-      value: resto.join("=").trim(),
-      domain: ".tiktok.com",
-      path: "/"
-    };
-  }).filter(c => c.name && c.value);
-
-  // Apaga o perfil salvo para forçar reinjeção com cookies novos
- 
-
-  console.log(`[TikTok] Cookies atualizados via API: ${cookiesCustom.length} cookies`);
-  res.json({
-    status: "ok",
-    mensagem: `${cookiesCustom.length} cookies atualizados. Perfil resetado para nova sessão.`,
-    cookies_salvos: cookiesCustom.map(c => c.name)
-  });
-});
-
-// ============================================
-// ROTA: STATUS DOS COOKIES
-// ============================================
-app.get("/tiktok/cookies/status", (req, res) => {
-  const fonte = cookiesCustom ? "dinamico (atualizado via API)" : "estatico (codigo)";
-  const lista = cookiesCustom || TIKTOK_COOKIES;
-  const perfilExiste = fs.existsSync(PERFIL_PATH);
-  res.json({
-    status: "ok",
-    fonte,
-    perfil_persistente: perfilExiste,
-    total_cookies: lista.length,
-    cookies: lista.map(c => c.name)
-  });
-});
-
-// ============================================
-// ROTA: OFERTAS DO DIA - MERCADO LIVRE
+// ENDPOINT: BUSCAR OFERTAS DO DIA (GERAL) - ML
 // ============================================
 app.get("/ofertas", async (req, res) => {
   try {
-    const browser = await abrirBrowser();
-    const context = await browser.newContext({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", viewport: { width: 1920, height: 1080 }, locale: "pt-BR" });
+    console.log("🔄 Buscando ofertas do dia...");
+    const browser = await chromium.launch({
+      headless: true,
+      args: [
+  "--no-sandbox",
+  "--disable-setuid-sandbox", 
+  "--disable-blink-features=AutomationControlled",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--single-process"
+],
+    });
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR'
+    });
     const page = await context.newPage();
     await page.goto("https://www.mercadolivre.com.br/ofertas", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
-    for (let i = 1; i <= 5; i++) { await page.evaluate((s) => window.scrollTo(0, (document.body.scrollHeight / 5) * s), i); await page.waitForTimeout(2000); }
+    // Scroll progressivo para carregar mais produtos
+for (let i = 1; i <= 5; i++) {
+  await page.evaluate((step) => {
+    window.scrollTo(0, (document.body.scrollHeight / 5) * step);
+  }, i);
+  await page.waitForTimeout(2000);
+}
+await page.waitForTimeout(3000);
+
     const produtos = await page.evaluate(() => {
       const items = [];
-      const seletores = ["article", "div[class*='ui-search-result']", "li[class*='ui-search-layout__item']", "div.poly-card"];
-      let cards = [];
-      for (const sel of seletores) { cards = Array.from(document.querySelectorAll(sel)); if (cards.length > 0) break; }
-      cards.forEach((card, index) => {
+      const possiveisSeletores = [
+        'article', 'div[class*="ui-search-result"]', 'li[class*="ui-search-layout__item"]',
+        'div.poly-card', 'div[class*="poly-component"]', 'li.poly-component__item', 'div[class*="promotion-item"]'
+      ];
+      let todosCards = [];
+      for (const seletor of possiveisSeletores) {
+        const cards = Array.from(document.querySelectorAll(seletor));
+        if (cards.length > 0) { todosCards = cards; break; }
+      }
+      todosCards.forEach((card, index) => {
         try {
-          let titulo = "";
-          for (const sel of ["h2", "h3", "a[class*='title']", ".poly-component__title"]) { const el = card.querySelector(sel); if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; } }
-          const precoEl = card.querySelector(".andes-money-amount__fraction, [class*='price-tag-fraction']");
-          const preco = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const link = card.querySelector("a")?.href || "";
-          const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
-          const desconto = card.querySelector("[class*='discount'], [class*='off']")?.textContent?.trim() || "";
-          if (titulo && titulo.length > 3) items.push({ titulo, preco, desconto, link, imagem, posicao: index + 1 });
-        } catch (e) {}
+          const possiveisTitulos = ['h2', 'h3', 'a[class*="title"]', '.poly-component__title', '[class*="ui-search-item__title"]', 'p[class*="promotion-item__title"]'];
+          let titulo = '';
+          for (const sel of possiveisTitulos) {
+            const el = card.querySelector(sel);
+            if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
+          }
+          const possiveisPrecos = ['.andes-money-amount__fraction', '[class*="price-tag-fraction"]', 'span[class*="price"]', '.price-tag-amount'];
+          let precoTexto = '';
+          for (const sel of possiveisPrecos) {
+            const els = card.querySelectorAll(sel);
+            if (els.length > 0) { precoTexto = els[0].textContent.trim(); break; }
+          }
+          const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) : 0;
+          let precoOriginal = 0;
+          const precoOriginalEl = card.querySelector('s .andes-money-amount__fraction, .andes-money-amount--previous .andes-money-amount__fraction');
+          if (precoOriginalEl) precoOriginal = parseFloat(precoOriginalEl.textContent.trim().replace(/[^\d,]/g, '').replace(',', '.'));
+          let desconto = '';
+          const descontoEl = card.querySelector('[class*="discount"], [class*="off"], .poly-price__discount');
+          if (descontoEl) desconto = descontoEl.textContent.trim();
+          let parcelas = '';
+          const parcelasEl = card.querySelector('[class*="installment"], [class*="parcela"], .poly-price__installments');
+          if (parcelasEl) parcelas = parcelasEl.textContent.trim();
+          let avaliacao = 0;
+          const avaliacaoEl = card.querySelector('[class*="rating"], .poly-reviews__rating');
+          if (avaliacaoEl) avaliacao = parseFloat(avaliacaoEl.textContent.trim()) || 0;
+          let numReviews = 0;
+          const reviewsEl = card.querySelector('[class*="reviews__total"], [class*="rating__count"]');
+          if (reviewsEl) numReviews = parseInt(reviewsEl.textContent.replace(/[^\d]/g, '')) || 0;
+          let cupom = '';
+          const cupomEl = card.querySelector('[class*="coupon"], [class*="cupom"]');
+          if (cupomEl) cupom = cupomEl.textContent.trim();
+          let freteGratis = false;
+          const freteEl = card.querySelector('[class*="shipping"], [class*="frete"]');
+          if (freteEl) freteGratis = freteEl.textContent.toLowerCase().includes('grátis');
+          const linkElement = card.querySelector('a');
+          const link = linkElement ? linkElement.href : '';
+          const imgElement = card.querySelector('img');
+          const imagem = imgElement ? (imgElement.src || imgElement.getAttribute('data-src') || '') : '';
+          if ((titulo && titulo.length > 3) || (link && link.includes('MLB'))) {
+            items.push({ titulo: titulo || 'Sem título', preco, preco_original: precoOriginal, desconto, parcelas, avaliacao, num_reviews: numReviews, cupom, frete_gratis: freteGratis, link, imagem, posicao: index + 1 });
+          }
+        } catch (error) { console.error(`Erro no card ${index}:`, error.message); }
       });
       return items;
     });
+
     await browser.close();
+    console.log(`✅ Extraídos ${produtos.length} produtos`);
+    if (produtos.length === 0) {
+      return res.json({ status: "aviso", total: 0, mensagem: "Nenhum produto encontrado.", data_extracao: new Date().toISOString(), produtos: [] });
+    }
     res.json({ status: "ok", total: produtos.length, data_extracao: new Date().toISOString(), produtos });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+  } catch (error) {
+    console.error("❌ Erro ao buscar ofertas:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: OFERTAS POR CATEGORIA - MERCADO LIVRE
+// ENDPOINT: BUSCAR OFERTAS POR CATEGORIA - ML
 // ============================================
 app.get("/ofertas/:categoria", async (req, res) => {
   try {
     const { categoria } = req.params;
-    const browser = await abrirBrowser();
-    const page = await (await browser.newContext()).newPage();
+    console.log(`🔄 Buscando ofertas da categoria: ${categoria}`);
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
     await page.goto(`https://www.mercadolivre.com.br/ofertas?container_id=${categoria}`, { waitUntil: "networkidle", timeout: 30000 });
+
     const produtos = await page.evaluate(() => {
       const items = [];
-      document.querySelectorAll("div.poly-card, li.poly-component__item, div[class*='promotion-item']").forEach((card, index) => {
+      const selectors = ['div.poly-card', 'li.poly-component__item', 'div[class*="promotion-item"]', 'a.poly-component__link'];
+      let cards = [];
+      for (const selector of selectors) { cards = document.querySelectorAll(selector); if (cards.length > 0) break; }
+      cards.forEach((card, index) => {
         try {
-          const titulo = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim();
-          const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim();
-          const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const link = card.querySelector("a")?.href || "";
-          const imagem = card.querySelector("img")?.src || "";
-          if (titulo && link) items.push({ titulo, preco, link, imagem, posicao: index + 1 });
-        } catch (e) {}
+          const titulo = card.querySelector('h2, h3, [class*="title"]')?.textContent?.trim();
+          const precoTexto = card.querySelector('[class*="price"], .andes-money-amount__fraction')?.textContent?.trim();
+          const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, '').replace(',', '.')) : 0;
+          const linkElement = card.querySelector('a') || card;
+          const link = linkElement?.href || linkElement?.getAttribute('href');
+          const imagem = card.querySelector('img')?.src || card.querySelector('img')?.getAttribute('data-src');
+          const desconto = card.querySelector('[class*="discount"], [class*="off"]')?.textContent?.trim();
+          const parcelas = card.querySelector('[class*="installment"], [class*="parcela"]')?.textContent?.trim() || '';
+          const avaliacaoEl = card.querySelector('[class*="rating"]');
+          const avaliacao = avaliacaoEl ? parseFloat(avaliacaoEl.textContent.trim()) || 0 : 0;
+          const freteEl = card.querySelector('[class*="shipping"], [class*="frete"]');
+          const freteGratis = freteEl ? freteEl.textContent.toLowerCase().includes('grátis') : false;
+          if (titulo && link && link.includes('mercadolivre.com')) {
+            items.push({ titulo, preco, desconto: desconto || '', parcelas, avaliacao, frete_gratis: freteGratis, link, imagem: imagem || '', posicao: index + 1 });
+          }
+        } catch (error) { console.error(`Erro ao extrair produto ${index}:`, error.message); }
       });
       return items;
     });
+
     await browser.close();
-    res.json({ status: "ok", categoria, total: produtos.length, produtos });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+    res.json({ status: "ok", categoria, total: produtos.length, data_extracao: new Date().toISOString(), produtos });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: LINK DE AFILIADO SIMPLES - ML
+// ENDPOINT: GERAR LINK DE AFILIADO SIMPLES - ML
 // ============================================
-app.post("/mercado-simples", (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ status: "erro", mensagem: "URL não fornecida" });
-  const urlAfiliado = url.includes("?") ? `${url}&tracking_id=ragi6098412` : `${url}?tracking_id=ragi6098412`;
-  res.json({ status: "ok", url_original: url, url_afiliado: urlAfiliado });
-});
-
-// ============================================
-// ROTA: LINK MELI.LA OFICIAL - ML
-// ============================================
-app.post("/mercado-oficial", async (req, res) => {
+app.post("/mercado-simples", async (req, res) => {
   try {
     const { url } = req.body;
-    const response = await fetch("https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Cookie": process.env.ML_COOKIE || "", "User-Agent": "Mozilla/5.0" },
-      body: JSON.stringify({ urls: [url], tag: "ragi6098412" })
-    });
-    const data = await response.json();
-    res.json({ status: "ok", url_original: url, url_afiliado: data.urls?.[0]?.short_url || url });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+    if (!url) return res.status(400).json({ status: "erro", mensagem: "URL do produto não fornecida" });
+    if (!url.includes("mercadolivre.com") && !url.includes("mercadolibre.com")) return res.status(400).json({ status: "erro", mensagem: "URL inválida - deve ser do Mercado Livre" });
+    const trackingId = "ragi6098412";
+    const affiliateUrl = url.includes('?') ? `${url}&tracking_id=${trackingId}` : `${url}?tracking_id=${trackingId}`;
+    res.json({ status: "ok", url_original: url, url_afiliado: affiliateUrl, tracking_id: trackingId, mensagem: "Link de afiliado gerado com sucesso!" });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: BUSCAR OFERTAS AMAZON
+// ENDPOINT: GERAR LINK DE AFILIADO PLAYWRIGHT - ML
+// ============================================
+app.post("/mercado", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ status: "erro", mensagem: "URL não fornecida" });
+    const trackingId = "ragi6098412";
+    const affiliateUrl = url.includes('?') ? `${url}&tracking_id=${trackingId}` : `${url}?tracking_id=${trackingId}`;
+    try {
+      const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto("https://www.mercadolivre.com.br/afiliados/linkbuilder#hub", { timeout: 15000 });
+      const shortened = await page.evaluate(async (longUrl, tag) => {
+        try {
+          const result = await fetch("https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: [longUrl], tag }) });
+          if (result.ok) return await result.json();
+          return null;
+        } catch (e) { return null; }
+      }, url, trackingId);
+      await browser.close();
+      if (shortened && shortened.urls && shortened.urls[0]) {
+        return res.json({ status: "ok", url_original: url, url_afiliado: shortened.urls[0].short_url || affiliateUrl, url_encurtada: shortened.urls[0].short_url, tracking_id: trackingId });
+      }
+    } catch (e) { console.log("⚠️ Não conseguiu encurtar"); }
+    res.json({ status: "ok", url_original: url, url_afiliado: affiliateUrl, tracking_id: trackingId, mensagem: "Link gerado (não encurtado)" });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ENDPOINT: GERAR LINK MELI.LA OFICIAL - ML
+// ============================================
+app.post('/mercado-oficial', async (req, res) => {
+  try {
+    const { url } = req.body;
+    const cookie = process.env.ML_COOKIE || '';
+    const response = await fetch('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      body: JSON.stringify({ urls: [url], tag: 'ragi6098412' })
+    });
+    const data = await response.json();
+    const shortUrl = data.urls?.[0]?.short_url;
+    res.json({ status: 'ok', url_original: url, url_afiliado: shortUrl || url, meli_la: shortUrl });
+  } catch (error) {
+    res.status(500).json({ erro: error.message });
+  }
+});
+
+// ============================================
+// ENDPOINT: BUSCAR OFERTAS AMAZON (nacionais + internacionais + bugs)
 // ============================================
 app.get("/amazon", async (req, res) => {
   try {
     const { tipo = "todos" } = req.query;
-    const browser = await abrirBrowser();
-    const context = await browser.newContext({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", viewport: { width: 1920, height: 1080 }, locale: "pt-BR" });
+    console.log(`🔄 Buscando ofertas Amazon - tipo: ${tipo}`);
+
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+    });
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR',
+      extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' }
+    });
     const page = await context.newPage();
-    async function extrairAmazon(url, origem) {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+    const urlNacional = "https://www.amazon.com.br/s?k=casa+cozinha&i=home&rh=p_76%3A11&dc&ref=sr_nr_p_76_1";
+    const urlGeral = "https://www.amazon.com.br/s?k=casa+e+decoracao&i=home&bbn=16209062011&rh=n%3A16209062011&dc&ref=sr_nr_n_1";
+
+    let produtosNacionais = [];
+    if (tipo === "nacionais" || tipo === "todos") {
+      await page.goto(urlNacional, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForTimeout(4000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+      await page.waitForTimeout(2000);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(2000);
-      return await page.evaluate((origem) => Array.from(document.querySelectorAll('div[data-component-type="s-search-result"]')).map((card, index) => {
-        const titulo = card.querySelector("h2 a span, h2 span")?.textContent?.trim() || "";
-        const precoInteiro = card.querySelector(".a-price-whole")?.textContent?.replace(/[^\d]/g, "") || "0";
-        const precoFracao = card.querySelector(".a-price-fraction")?.textContent?.replace(/[^\d]/g, "") || "00";
-        const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
-        const asin = card.getAttribute("data-asin") || "";
-        const link = asin ? `https://www.amazon.com.br/dp/${asin}` : "";
-        const imagem = card.querySelector("img.s-image")?.src || "";
-        if (titulo && preco > 0) return { titulo, preco, asin, link, imagem, origem, posicao: index + 1 };
-        return null;
-      }).filter(Boolean), origem);
+      produtosNacionais = await extrairProdutosAmazon(page, "nacional");
     }
-    let produtos = [];
-    if (tipo === "nacionais" || tipo === "todos") produtos = [...produtos, ...await extrairAmazon("https://www.amazon.com.br/s?k=casa+cozinha&i=home&rh=p_76%3A11", "nacional")];
-    if (tipo === "internacionais" || tipo === "todos") produtos = [...produtos, ...await extrairAmazon("https://www.amazon.com.br/s?k=casa+e+decoracao&i=home", "internacional")];
+
+    let produtosTodos = [];
+    if (tipo === "internacionais" || tipo === "todos") {
+      await page.goto(urlGeral, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(4000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+      await page.waitForTimeout(2000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(2000);
+      produtosTodos = await extrairProdutosAmazon(page, "internacional");
+    }
+
     await browser.close();
-    const unicos = produtos.filter((p, i, arr) => arr.findIndex(x => x.asin === p.asin) === i);
-    res.json({ status: "ok", total: unicos.length, data_extracao: new Date().toISOString(), produtos: unicos });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+
+    const todosProdutos = [...produtosNacionais, ...produtosTodos];
+    const unicos = todosProdutos.filter((p, i, arr) => arr.findIndex(x => x.asin === p.asin) === i);
+    const bugs = unicos.filter(p => p.possivel_bug);
+
+    console.log(`✅ Amazon: ${unicos.length} produtos (${produtosNacionais.length} nacionais, ${produtosTodos.length} internacionais) | ${bugs.length} bugs`);
+    res.json({
+      status: "ok",
+      total: unicos.length,
+      nacionais: produtosNacionais.length,
+      internacionais: produtosTodos.length,
+      bugs_detectados: bugs.length,
+      data_extracao: new Date().toISOString(),
+      produtos: unicos
+    });
+  } catch (error) {
+    console.error("❌ Erro Amazon:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+async function extrairProdutosAmazon(page, origem) {
+  return await page.evaluate((origem) => {
+    const items = [];
+    const cards = Array.from(document.querySelectorAll('div[data-component-type="s-search-result"]'));
+    cards.forEach((card, index) => {
+      try {
+        const titulo = card.querySelector('h2 a span, h2 span')?.textContent?.trim() || '';
+        const precoInteiro = card.querySelector('.a-price-whole')?.textContent?.replace(/[^\d]/g, '') || '0';
+        const precoFracao = card.querySelector('.a-price-fraction')?.textContent?.replace(/[^\d]/g, '') || '00';
+        const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
+        const precoOrigTexto = card.querySelector('.a-text-price .a-offscreen')?.textContent?.trim() || '';
+        const preco_original = parseFloat(precoOrigTexto.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+        const desconto = card.querySelector('span.a-letter-space + span, [class*="savingsPercentage"]')?.textContent?.trim() || '';
+        const avaliacaoTexto = card.querySelector('span.a-icon-alt')?.textContent?.trim() || '';
+        const avaliacao = parseFloat(avaliacaoTexto.replace(',', '.')) || 0;
+        const num_reviews = parseInt(card.querySelector('span[aria-label*="estrelas"] + span, a[href*="customerReviews"] span')?.textContent?.replace(/[^\d]/g, '')) || 0;
+        const imagem = card.querySelector('img.s-image')?.src || '';
+        const linkEl = card.querySelector('h2 a, a.a-link-normal');
+        let link = linkEl?.href || '';
+        if (link && !link.startsWith('http')) link = 'https://www.amazon.com.br' + link;
+        const asin = card.getAttribute('data-asin') || '';
+        const frete_gratis = !!card.querySelector('i[aria-label="Amazon Prime"], [data-testid*="prime"]');
+
+        const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
+        const possivel_bug = pctDesconto >= 70;
+
+        if (titulo && titulo.length > 3 && preco > 0) {
+          items.push({ titulo, preco, preco_original, desconto, pct_desconto: pctDesconto, possivel_bug, avaliacao, num_reviews, imagem, link, asin, frete_gratis, origem, posicao: index + 1 });
+        }
+      } catch (e) { console.error(`Erro no card ${index}:`, e.message); }
+    });
+    return items;
+  }, origem);
+}
+
+// ============================================
+// ENDPOINT: GERAR LINK DE AFILIADO AMAZON
+// ============================================
+app.post("/amazon-link", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ status: "erro", mensagem: "URL do produto não fornecida" });
+    if (!url.includes("amazon.com.br") && !url.includes("amzn.to")) return res.status(400).json({ status: "erro", mensagem: "URL inválida - deve ser da Amazon Brasil" });
+    let asin = '';
+    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
+    if (asinMatch) asin = asinMatch[1] || asinMatch[2];
+    const urlAfiliado = asin ? `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}` : (url.includes('?') ? `${url}&tag=${AMAZON_TAG}` : `${url}?tag=${AMAZON_TAG}`);
+    res.json({ status: "ok", url_original: url, url_afiliado: urlAfiliado, asin: asin || "não encontrado", tag: AMAZON_TAG, mensagem: "Link de afiliado Amazon gerado com sucesso!" });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: LINK DE AFILIADO AMAZON
-// ============================================
-app.post("/amazon-link", (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ status: "erro", mensagem: "URL não fornecida" });
-  const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
-  const asin = asinMatch ? asinMatch[1] || asinMatch[2] : null;
-  const urlAfiliado = asin ? `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}` : `${url}${url.includes("?") ? "&" : "?"}tag=${AMAZON_TAG}`;
-  res.json({ status: "ok", url_original: url, url_afiliado: urlAfiliado, asin: asin || "não encontrado" });
-});
-
-// ============================================
-// ROTA: BUSCAR PRODUTOS - CREATORS API AMAZON
+// ENDPOINT: BUSCAR PRODUTOS VIA CREATORS API
 // ============================================
 app.post("/amazon-buscar", async (req, res) => {
   try {
     const { keywords, categoria = "All", pagina = 1 } = req.body;
-    if (!keywords) return res.status(400).json({ status: "erro", mensagem: "'keywords' obrigatório" });
+    if (!keywords) return res.status(400).json({ status: "erro", mensagem: "Campo 'keywords' obrigatório" });
+    console.log(`🔍 Buscando na Creators API: "${keywords}"`);
     const token = await getCreatorsToken();
+    const payload = {
+      keywords, partnerTag: AMAZON_TAG, partnerType: "Associates", searchIndex: categoria,
+      itemPage: pagina, itemCount: 10,
+      resources: ["itemInfo.title", "itemInfo.byLineInfo", "offersV2.listings.price", "offersV2.listings.condition", "images.primary.medium", "customerReviews.count", "customerReviews.starRating", "itemInfo.features"],
+      marketplace: "www.amazon.com.br", languagesOfPreference: ["pt_BR"]
+    };
     const response = await fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/searchitems", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "x-marketplace": "www.amazon.com.br" },
-      body: JSON.stringify({ keywords, partnerTag: AMAZON_TAG, partnerType: "Associates", searchIndex: categoria, itemPage: pagina, itemCount: 10, resources: ["itemInfo.title", "offersV2.listings.price", "images.primary.medium", "customerReviews.count", "customerReviews.starRating"], marketplace: "www.amazon.com.br", languagesOfPreference: ["pt_BR"] })
+      body: JSON.stringify(payload)
     });
+    if (!response.ok) {
+      const erro = await response.text();
+      return res.status(response.status).json({ status: "erro", mensagem: `Erro na Creators API: ${response.status}`, detalhe: erro });
+    }
     const data = await response.json();
-    const produtos = (data.SearchResult?.Items || []).map((item, i) => ({ asin: item.ASIN || "", titulo: item.ItemInfo?.Title?.DisplayValue || "", preco: item.OffersV2?.Listings?.[0]?.Price?.Amount || 0, preco_formatado: item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || "", imagem: item.Images?.Primary?.Medium?.URL || "", url_afiliado: `https://www.amazon.com.br/dp/${item.ASIN}?tag=${AMAZON_TAG}`, posicao: i + 1 }));
-    res.json({ status: "ok", keywords, total: produtos.length, produtos });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+    const produtos = (data.SearchResult?.Items || []).map((item, index) => ({
+      asin: item.ASIN || '',
+      titulo: item.ItemInfo?.Title?.DisplayValue || '',
+      preco: item.OffersV2?.Listings?.[0]?.Price?.Amount || 0,
+      moeda: item.OffersV2?.Listings?.[0]?.Price?.Currency || 'BRL',
+      preco_formatado: item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || '',
+      imagem: item.Images?.Primary?.Medium?.URL || '',
+      avaliacao: item.CustomerReviews?.StarRating?.Value || 0,
+      num_reviews: item.CustomerReviews?.Count || 0,
+      url_afiliado: `https://www.amazon.com.br/dp/${item.ASIN}?tag=${AMAZON_TAG}`,
+      posicao: index + 1
+    }));
+    res.json({ status: "ok", keywords, total: produtos.length, pagina, data_extracao: new Date().toISOString(), produtos });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: DETALHES DE PRODUTO POR ASIN - AMAZON
+// ENDPOINT: DETALHES DE PRODUTO POR ASIN
 // ============================================
 app.post("/amazon-produto", async (req, res) => {
   try {
     const { asin } = req.body;
-    if (!asin) return res.status(400).json({ status: "erro", mensagem: "'asin' obrigatório" });
+    if (!asin) return res.status(400).json({ status: "erro", mensagem: "Campo 'asin' obrigatório" });
+    console.log(`🔍 Buscando produto ASIN: ${asin}`);
     const token = await getCreatorsToken();
+    const payload = {
+      itemIds: [asin], partnerTag: AMAZON_TAG, partnerType: "Associates",
+      resources: ["itemInfo.title", "itemInfo.byLineInfo", "itemInfo.features", "offersV2.listings.price", "offersV2.listings.condition", "offersV2.listings.deliveryInfo.isPrimeEligible", "images.primary.large", "customerReviews.count", "customerReviews.starRating"],
+      marketplace: "www.amazon.com.br", languagesOfPreference: ["pt_BR"]
+    };
     const response = await fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/getitems", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "x-marketplace": "www.amazon.com.br" },
-      body: JSON.stringify({ itemIds: [asin], partnerTag: AMAZON_TAG, partnerType: "Associates", resources: ["itemInfo.title", "offersV2.listings.price", "images.primary.large", "customerReviews.count", "customerReviews.starRating"], marketplace: "www.amazon.com.br", languagesOfPreference: ["pt_BR"] })
+      body: JSON.stringify(payload)
     });
+    if (!response.ok) {
+      const erro = await response.text();
+      return res.status(response.status).json({ status: "erro", mensagem: `Erro na Creators API: ${response.status}`, detalhe: erro });
+    }
     const data = await response.json();
     const item = data.ItemsResult?.Items?.[0];
     if (!item) return res.json({ status: "aviso", mensagem: "Produto não encontrado", asin });
-    res.json({ status: "ok", asin, titulo: item.ItemInfo?.Title?.DisplayValue || "", preco: item.OffersV2?.Listings?.[0]?.Price?.Amount || 0, preco_formatado: item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || "", imagem: item.Images?.Primary?.Large?.URL || "", url_afiliado: `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}` });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+    res.json({
+      status: "ok", asin,
+      titulo: item.ItemInfo?.Title?.DisplayValue || '',
+      preco: item.OffersV2?.Listings?.[0]?.Price?.Amount || 0,
+      preco_formatado: item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || '',
+      prime: item.OffersV2?.Listings?.[0]?.DeliveryInfo?.IsPrimeEligible || false,
+      imagem: item.Images?.Primary?.Large?.URL || '',
+      avaliacao: item.CustomerReviews?.StarRating?.Value || 0,
+      num_reviews: item.CustomerReviews?.Count || 0,
+      features: item.ItemInfo?.Features?.DisplayValues || [],
+      url_afiliado: `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}`,
+      tag: AMAZON_TAG
+    });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: BUSCAR PRODUTOS SHEIN
+// ENDPOINT LEGADO: ENCURTAR LINK AMAZON
+// ============================================
+app.post('/encurtar-link', async (req, res) => {
+  const { asin } = req.body;
+  if (!asin) return res.status(400).json({ status: 'erro', mensagem: 'ASIN obrigatório' });
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' }
+  });
+  await context.addCookies([
+    { name: 'session-id', value: '132-2538792-9842543', domain: '.amazon.com.br', path: '/' },
+    { name: 'ubid-acbbr', value: '134-1696896-9118130', domain: '.amazon.com.br', path: '/' },
+    { name: 'lc-acbbr', value: 'pt_BR', domain: '.amazon.com.br', path: '/' },
+    { name: 'i18n-prefs', value: 'BRL', domain: '.amazon.com.br', path: '/' }
+  ]);
+  const page = await context.newPage();
+  try {
+    const url = `https://www.amazon.com.br/associates/sitestripe/getShortUrl?asin=${asin}&tag=${AMAZON_TAG}&linkType=text`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const body = await page.textContent('body');
+    const json = JSON.parse(body);
+    await browser.close();
+    if (json && json.shortUrl) return res.json({ status: 'ok', url_curta: json.shortUrl, asin });
+    return res.json({ status: 'erro', mensagem: 'Link não gerado', resposta: json });
+  } catch (err) {
+    await browser.close();
+    return res.status(500).json({ status: 'erro', mensagem: err.message });
+  }
+});
+
+// ============================================
+// ENDPOINT: BUSCAR PRODUTOS SHEIN (Playwright)
 // ============================================
 app.get("/shein", async (req, res) => {
   try {
     const { categoria = "moda" } = req.query;
-    const urls = { "moda": "https://br.shein.com/Women-Clothing-sc-017172961.html", "moda-feminina": "https://br.shein.com/Women-Clothing-sc-017172961.html", "moda-masculina": "https://br.shein.com/Men-Clothing-sc-00864889.html", "maquiagem": "https://br.shein.com/Beauty-cat-1954.html?sort=7", "aesthetics": "https://br.shein.com/Women-Y2K-cat-2467.html?sort=7", "camisetas": "https://br.shein.com/Women-Tops-cat-1738.html?sort=7", "linho": "https://br.shein.com/Women-Linen-cat-3007.html?sort=7", "casa": "https://br.shein.com/Home-cat-1766.html?sort=7", "promocao": "https://br.shein.com/promotion/flash-sale" };
+    console.log(`🔄 Buscando produtos Shein - categoria: ${categoria}`);
+
+    const urls = {
+      "moda":          "https://br.shein.com/Women-Clothing-sc-017172961.html",
+      "moda-feminina": "https://br.shein.com/Women-Clothing-sc-017172961.html",
+      "moda-masculina":"https://br.shein.com/Men-Clothing-sc-00864889.html",
+      "maquiagem":     "https://br.shein.com/Beauty-cat-1954.html?sort=7",
+      "aesthetics":    "https://br.shein.com/Women-Y2K-cat-2467.html?sort=7",
+      "camisetas":     "https://br.shein.com/Women-Tops-cat-1738.html?sort=7",
+      "linho":         "https://br.shein.com/Women-Linen-cat-3007.html?sort=7",
+      "casa":          "https://br.shein.com/Home-cat-1766.html?sort=7",
+      "promocao":      "https://br.shein.com/promotion/flash-sale"
+    };
+
     const url = urls[categoria] || urls["moda"];
-    const browser = await abrirBrowser();
-    const context = await browser.newContext({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", viewport: { width: 1920, height: 1080 }, locale: "pt-BR" });
-    await context.addCookies([{ name: "memberId", value: "1180825914", domain: ".shein.com", path: "/" }, { name: "AT", value: "MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3", domain: ".shein.com", path: "/" }, { name: "sessionID_shein", value: "s%3A7S7sthaovE_Sy9eCpmLnzrOlwWc0Fwmi.37UHrLYj4Eq6Bfxhb4gOBJOuPly4kkpD32FjScputO4", domain: ".shein.com", path: "/" }]);
+
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+    });
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR'
+    });
+
+  await context.addCookies([
+  {
+    name: 'memberId',
+    value: '1180825914',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'AT',
+    value: 'MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'cf_clearance',
+    value: '29_m.tjJTI28tvBqR15x.1tLdNCPj4uAwwVOD1O05bo-1778890425-1.2.1.1-KEi4p3v21FU5hkQ2wJ9FnEqKYZqGHtAdyzKcbqMB7imnmUdnu3Gj6cnEKI0SidchJcuwn7ssSO0sdOWqe5RqAydwxH4dde_CZvzvnnb0TeawKS0PtB5QWiwyH5FBjOjK3m4ROfw_2qCXwygX9cBI87ZT5YCdOO4mHiBjEAt8O.e_rS5lVKzwrnYxnuohn8ZBcfMrRp.gWSPxXdsh_z6rj67jvaoZAR4g9opZSjWV.zFDoCoY4.rDV1v_PaqNZM2MbJj8IF3nkoHe7AAhOCbsfhpyb4x9vHCjzP.itOjRdfCkjro56BIg61G7uWDDQ7KypIvXmXdhCYvVAoN4Hr6j1g',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'sessionID_shein',
+    value: 's%3A7S7sthaovE_Sy9eCpmLnzrOlwWc0Fwmi.37UHrLYj4Eq6Bfxhb4gOBJOuPly4kkpD32FjScputO4',
+    domain: '.shein.com',
+    path: '/'
+  },
+  {
+    name: 'armorUuid',
+    value: '2026051605285157efa2e475111728c96c6d64d94744ee00036ba3c3ded99e00',
+    domain: '.shein.com',
+    path: '/'
+  }
+]);
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(8000);
-    try { await page.click('[class*="close"], .sui-popup-close', { timeout: 3000 }); } catch (e) {}
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2)); await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await page.waitForTimeout(2000);
+await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(15000);
+
+    try {
+      await page.click('[class*="close"], [class*="Close"], .sui-popup-close, button[class*="close"]', { timeout: 5000 });
+      console.log('✅ Popup fechado!');
+      await page.waitForTimeout(1000);
+    } catch(e) {
+      console.log('ℹ️ Nenhum popup encontrado');
+    }
+
+    try {
+      await page.waitForSelector('[da-eid]', { timeout: 15000 });
+      console.log('✅ Cards Shein encontrados!');
+    } catch(e) {
+      console.log('⚠️ Timeout esperando cards...');
+    }
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(3000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(3000);
+
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: "/tmp/shein-debug.png" });
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: '/tmp/shein-debug.png' });
+    console.log('📸 Screenshot salvo!');
+
     const produtos = await page.evaluate(() => {
       const items = [];
-      const seletores = ["[da-eid]", ".product-item-v3", ".S-product-item", "div[class*='product-item']"];
+
+      const seletores = [
+        '[da-eid]',
+        '.bsc-cart-item-mini__wrap',
+        '.product-item-v3',
+        '.S-product-item',
+        'div[class*="product-item"]',
+        'section[class*="product"]'
+      ];
+
       let cards = [];
-      for (const sel of seletores) { cards = Array.from(document.querySelectorAll(sel)); if (cards.length > 0) break; }
+      let seletorUsado = '';
+      for (const sel of seletores) {
+        const found = Array.from(document.querySelectorAll(sel));
+        if (found.length > 0) {
+          cards = found;
+          seletorUsado = sel;
+          break;
+        }
+      }
+
+      console.log(`Seletor usado: ${seletorUsado} | Cards: ${cards.length}`);
+
       cards.forEach((card, index) => {
         try {
-          const eid = card.getAttribute("da-eid") || "";
-          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
-          const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
-          const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
-          const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
-          const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
-          if (titulo && preco > 0 && link) items.push({ titulo, preco, imagem, link, posicao: index + 1 });
-        } catch (e) {}
+          const eid = card.getAttribute('da-eid') || '';
+          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : '';
+
+          const titulo = card.querySelector('[class*="title"], [class*="name"], [class*="goods-title"]')?.textContent?.trim() || '';
+
+          const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"], [class*="price"]')?.textContent?.trim() || '';
+          const precoMatch = precoTexto.match(/R\$[\d.,]+/);
+          const precoLimpo = precoMatch ? precoMatch[0] : '';
+          const preco = parseFloat(precoLimpo.replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0;
+
+          const precoOrigEl = card.querySelector('[class*="del"], [class*="through"], [class*="original"], [class*="price-del"]');
+          const precoOrigTexto = precoOrigEl?.textContent?.trim() || '';
+          const preco_original = parseFloat(precoOrigTexto.replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0;
+
+          const descontoEl = card.querySelector('[class*="discount"], [class*="off-value"], [class*="sale-discount"]');
+          const desconto = descontoEl?.textContent?.trim() || '';
+
+          const img = card.querySelector('img');
+          const imagem = img?.src || img?.getAttribute('data-src') || img?.getAttribute('data-lazyload') || '';
+
+          const avaliacaoEl = card.querySelector('[class*="star"], [class*="rating"]');
+          const avaliacao = parseFloat(avaliacaoEl?.textContent?.trim()) || 0;
+
+          const vendidosEl = card.querySelector('[class*="sold"], [class*="vendido"]');
+          const vendidos = vendidosEl?.textContent?.trim() || '';
+
+          const pctDesconto = preco_original > 0 ? Math.round((preco_original - preco) / preco_original * 100) : 0;
+          const possivel_bug = pctDesconto >= 70;
+
+          if (titulo && titulo.length > 3 && preco > 0 && link) {
+            items.push({
+              titulo,
+              preco,
+              preco_original,
+              desconto,
+              pct_desconto: pctDesconto,
+              possivel_bug,
+              imagem,
+              link,
+              eid,
+              avaliacao,
+              vendidos,
+              posicao: index + 1
+            });
+          }
+        } catch (e) {
+          console.error(`Erro card ${index}:`, e.message);
+        }
       });
+
       return items;
     });
+
     await browser.close();
-    res.json({ status: "ok", categoria, total: produtos.length, data_extracao: new Date().toISOString(), produtos });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+
+    const bugs = produtos.filter(p => p.possivel_bug);
+    console.log(`✅ Shein: ${produtos.length} produtos | ${bugs.length} possíveis bugs`);
+
+    res.json({
+      status: "ok",
+      categoria,
+      total: produtos.length,
+      bugs_detectados: bugs.length,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
+
+  } catch (error) {
+    console.error("❌ Erro Shein:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
 // ============================================
-// ROTA: LINK DE AFILIADO SHEIN
+// ENDPOINT: DEBUG SCREENSHOT
+// ============================================
+app.get("/debug-screenshot", (req, res) => {
+  const arquivo = '/tmp/shein-debug.png';
+  if (fs.existsSync(arquivo)) {
+    res.sendFile(arquivo);
+  } else {
+    res.json({ status: "erro", mensagem: "Screenshot não encontrado. Chame /shein primeiro." });
+  }
+});
+
+// ============================================
+// ENDPOINT: GERAR LINK AFILIADO SHEIN
 // ============================================
 app.post("/shein-link", async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) return res.status(400).json({ status: "erro", mensagem: "url obrigatória" });
-    const response = await fetch("https://m.shein.com/br/affiliate/api/share/link/from/url", { method: "POST", headers: { "Content-Type": "application/json", "Cookie": "memberId=1180825914; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3", "User-Agent": "Mozilla/5.0" }, body: JSON.stringify({ uid: "1180825914", url }) });
-    res.json({ status: "ok", data: await response.json() });
-  } catch (error) { res.status(500).json({ status: "erro", mensagem: error.message }); }
+
+    const response = await fetch("https://m.shein.com/br/affiliate/api/share/link/from/url", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+"Cookie": `armorUuid=2026051605285157efa2e475111728c96c6d64d94744ee00036ba3c3ded99e00; memberId=1180825914; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3; sessionID_shein=s%3A7S7sthaovE_Sy9eCpmLnzrOlwWc0Fwmi.37UHrLYj4Eq6Bfxhb4gOBJOuPly4kkpD32FjScputO4; cf_clearance=ODqyenaGiuFp1tJjtXQeS30XtgxA5H0s.y4BSkhO0YM-1778893186-1.2.1.1-nlI8Bq94rWC5Z4OwT45G9imAHniEK5WLVAjEeb525oqnhuFfunL4hWUfuZi.B223wdp4wU1qGU_uhSJHiyAqy7DAQWbX07ENL0Qq_R_9l1QNqwu_ie1J_lNOnT5bLLqHlEwt.aLrWHkpZ_bQ4V0pVBm5xUvESZR2shZRmDtNlrikG5Ku2mQ1BgZAa65Jc_TOEaCdmA7ue3r8LTTmts03HjG3vuBoFfc2lBKLCXAZ3XPemX352lTxwbhIXlYMsHCoUf9gJlGjfney_05tz7qnLGMewAVH1HPAjxrS0JTP1G2Wvu4TygBE_3gPfyHujMT4CJWKooE6_2OXsxMkPgBfmg; language=br`,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://br.shein.com/"
+      },
+      body: JSON.stringify({ uid: "1180825914", url })
+    });
+
+    const data = await response.json();
+    res.json({ status: "ok", data });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
 });
 
-// ============================================
-// ROTA: SEGUIR CREATOR NO TIKTOK
-// ============================================
-app.post("/tiktok/seguir", async (req, res) => {
+// ============================================================
+// ENDPOINT: SEGUIR CREATOR NO TIKTOK - VERSÃO CORRIGIDA
+// ============================================================
+
+app.post('/tiktok/seguir', async (req, res) => {
   const { username } = req.body;
-  if (!username) return res.status(400).json({ status: "erro", mensagem: "username não fornecido" });
-  const user = username.startsWith("@") ? username.slice(1) : username;
-  console.log(`[TikTok] Seguindo: @${user}`);
+  
+  if (!username) {
+    return res.status(400).json({ erro: 'Username obrigatório' });
+  }
+
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('[INÍCIO] Requisição para seguir:', username);
+  console.log('═══════════════════════════════════════════════════════');
+
+  const url = `https://www.tiktok.com/${username}`;
+  let browser;
   let context;
+  let page;
+
   try {
-    const resultado = await getTikTokPage();
-    context = resultado.context;
-    const page = resultado.page;
-
-    await page.goto(`https://www.tiktok.com/@${user}`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(8000);
-    await page.mouse.move(500, 300);
-    await page.waitForTimeout(1000);
-    await fecharModais(page);
-    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
-
-    let botaoSeguir = null;
-
-    // Tentativa 1: seletor específico do header do perfil
-    for (const sel of [
-      '[data-e2e="user-page-follow-button"]',
-      'div[data-e2e="user-info-container"] button[data-e2e="follow-button"]',
-      'div[class*="ShareLayoutHeader"] button[data-e2e="follow-button"]',
-      'div[class*="user-page"] button[data-e2e="follow-button"]',
-    ]) {
-      botaoSeguir = await page.$(sel);
-      if (botaoSeguir) {
-        console.log(`[TikTok] Botão encontrado com seletor: ${sel}`);
-        break;
-      }
-    }
-
-    // Tentativa 2: pegar pelo Y < 400px (header fica no topo)
-    if (!botaoSeguir) {
-      const todosBotoes = await page.$$('button[data-e2e="follow-button"]');
-      for (const btn of todosBotoes) {
-        const box = await btn.boundingBox();
-        if (box && box.y < 400) {
-          botaoSeguir = btn;
-          console.log(`[TikTok] Botão encontrado por posição Y=${box.y}`);
-          break;
-        }
-      }
-    }
-
-    if (!botaoSeguir) {
-      await context.close();
-      return res.json({ status: "ignorado", mensagem: "Botão de seguir não encontrado no perfil", username: `@${user}` });
-    }
-
-    // Verifica se já segue
-    const textoBotao = await botaoSeguir.innerText().catch(() => "");
-    console.log(`[TikTok] Texto do botão: "${textoBotao}"`);
-    if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following")) {
-      await context.close();
-      return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
-    }
-
-    // Scroll ao topo, fechar modais, clicar via JS
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(800);
-    await fecharModais(page);
-    await page.evaluate((el) => el.click(), botaoSeguir);
-    await page.waitForTimeout(3000);
-
-    const textoPosClique = await botaoSeguir.innerText().catch(() => "");
-    console.log(`[TikTok] Texto após clique: "${textoPosClique}"`);
-    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
-    console.log(`[TikTok] ✅ Seguiu @${user}`);
-    await context.close();
-
-    const confirmado = textoPosClique.toLowerCase().includes("seguindo") || textoPosClique.toLowerCase().includes("following");
-    return res.json({
-      status: "ok",
-      mensagem: `Seguiu @${user} com sucesso`,
-      username: `@${user}`,
-      confirmado,
-      botao_texto: textoPosClique
+    // ========== ETAPA 1: Criar browser ==========
+    console.log('[DEBUG 1/8] Inicializando Chromium...');
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process'
+      ]
     });
+    console.log('✓ Chromium inicializado');
+
+    // ========== ETAPA 2: Criar contexto ==========
+    console.log('[DEBUG 2/8] Criando contexto do navegador...');
+    context = await browser.newContext({ 
+      storageState: fs.existsSync(AUTH_FILE) ? AUTH_FILE : undefined,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'pt-BR'
+    });
+    console.log('✓ Contexto criado com sucesso');
+    console.log('[DEBUG 2/8] Cookies carregados:', fs.existsSync(AUTH_FILE) ? 'SIM' : 'NÃO');
+
+    // ========== ETAPA 3: Criar página ==========
+    console.log('[DEBUG 3/8] Criando nova página...');
+    page = await context.newPage();
+    
+    // Mascara automação
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    console.log('✓ Página criada');
+
+    // ========== ETAPA 4: Navegar ==========
+    console.log('[DEBUG 4/8] Navegando para:', url);
+    console.log('[DEBUG 4/8] Timeout configurado: 60 segundos');
+    
+    const startNav = Date.now();
+    await page.goto(url, { 
+      waitUntil: 'domcontentloaded', 
+      timeout: 60000 
+    });
+    const navTime = Date.now() - startNav;
+    
+    console.log(`✓ Navegação concluída em ${navTime}ms`);
+    console.log('[DEBUG 4/8] URL final:', page.url());
+    console.log('[DEBUG 4/8] Título da página:', await page.title());
+
+    // ========== ETAPA 5: Screenshot ==========
+    console.log('[DEBUG 5/8] Tirando screenshot...');
+    await page.screenshot({ 
+      path: '/app/tiktok-debug.png',
+      fullPage: false 
+    });
+    console.log('✓ Screenshot salvo em /app/tiktok-debug.png');
+
+    // ========== ETAPA 6: Verificar se é página de login ==========
+    const isLoginPage = page.url().includes('/login') || page.url().includes('foryou');
+    if (isLoginPage) {
+      console.log('⚠ REDIRECIONADO PARA LOGIN - Cookies inválidos ou expirados');
+      await browser.close();
+      return res.json({ 
+        status: 'erro', 
+        razao: 'Cookies expirados - precisa fazer login novamente',
+        urlFinal: page.url()
+      });
+    }
+
+    // ========== ETAPA 7: Procurar botão ==========
+    console.log('[DEBUG 7/8] Procurando botão de seguir...');
+    console.log('[DEBUG 7/8] Seletores:', 'button[data-e2e="follow-button"]');
+    
+    await page.waitForTimeout(3000); // Espera a página carregar completamente
+    
+    const btnSeguir = await page.$('button[data-e2e="follow-button"]');
+    
+    if (!btnSeguir) {
+      console.log('⚠ Botão de seguir NÃO encontrado');
+      console.log('[DEBUG 7/8] Listando todos os botões na página...');
+      
+      const allButtons = await page.$$eval('button', buttons => 
+        buttons.slice(0, 10).map(btn => ({ // Apenas os 10 primeiros
+          text: btn.innerText?.substring(0, 50),
+          dataE2e: btn.getAttribute('data-e2e'),
+          class: btn.className?.substring(0, 100)
+        }))
+      );
+      
+      console.log('[DEBUG 7/8] Botões encontrados:', JSON.stringify(allButtons, null, 2));
+      
+      // Salvar HTML (primeiros 1000 chars)
+      const html = await page.content();
+      console.log('[DEBUG 7/8] Primeiros 1000 chars do HTML:', html.substring(0, 1000));
+      
+      await browser.close();
+      return res.json({ 
+        status: 'ignorado', 
+        razao: 'Botão de seguir não encontrado',
+        debug: {
+          urlFinal: page.url(),
+          titulo: await page.title(),
+          totalBotoes: allButtons.length,
+          botoes: allButtons
+        }
+      });
+    }
+
+    // ========== ETAPA 8: Verificar se já segue ==========
+    console.log('✓ Botão encontrado! Verificando estado...');
+    const btnText = await btnSeguir.textContent();
+    console.log('[DEBUG 8/8] Texto do botão:', btnText?.trim());
+
+    if (!btnText || btnText.toLowerCase().includes('following') || btnText.toLowerCase().includes('seguindo')) {
+      console.log('⚠ Usuário já está sendo seguido');
+      await browser.close();
+      return res.json({ 
+        status: 'ignorado', 
+        razao: 'Já segue este perfil',
+        textoBtn: btnText 
+      });
+    }
+
+    // ========== CLICAR NO BOTÃO ==========
+    console.log('[DEBUG 8/8] Clicando no botão de seguir...');
+    
+    // Scroll leve para parecer humano
+    await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 300));
+    await page.waitForTimeout(1000 + Math.random() * 2000);
+    
+    await btnSeguir.click();
+    console.log('✓ Botão clicado com sucesso');
+
+    // Espera humana pós-follow
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+
+    await browser.close();
+    
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('[SUCESSO] Perfil seguido:', username);
+    console.log('═══════════════════════════════════════════════════════');
+    
+    return res.json({ 
+      status: 'seguido', 
+      usuario: username 
+    });
+
   } catch (error) {
-    if (context) await context.close().catch(() => {});
-    console.error(`[TikTok] ERRO: ${error.message}`);
-    return res.status(500).json({ status: "erro", mensagem: error.message, username: `@${user}` });
+    console.error('╔═══════════════════════════════════════════════════════╗');
+    console.error('║                  ERRO CRÍTICO                         ║');
+    console.error('╚═══════════════════════════════════════════════════════╝');
+    console.error('[ERRO] Tipo:', error.name);
+    console.error('[ERRO] Mensagem:', error.message);
+    console.error('[ERRO] Stack:', error.stack);
+    
+    if (browser) await browser.close();
+    
+    return res.status(500).json({ 
+      erro: error.message,
+      tipo: error.name,
+      stack: error.stack.split('\n').slice(0, 3).join('\n')
+    });
   }
 });
 
-// ============================================
-// ROTA: CURTIR VÍDEOS DE UM CREATOR NO TIKTOK
-// Body: { "username": "@usuario", "quantidade": 3 }
-// Máximo: 10 curtidas por chamada
-// ============================================
-app.post("/tiktok/curtir", async (req, res) => {
-  const { username, quantidade = 3 } = req.body;
-  if (!username) return res.status(400).json({ status: "erro", mensagem: "username não fornecido" });
-  const user = username.startsWith("@") ? username.slice(1) : username;
-  const qtd = Math.min(parseInt(quantidade) || 3, 10);
-  console.log(`[TikTok] Curtindo ${qtd} vídeo(s) de @${user}`);
-  let context;
-  try {
-    const resultado = await getTikTokPage();
-    context = resultado.context;
-    const page = resultado.page;
+// ==========================================
+// ENDPOINT AUXILIAR: /tiktok/screenshot
+// ==========================================
 
-    await page.goto(`https://www.tiktok.com/@${user}`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(8000);
-    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
-    await fecharModais(page);
-
-    const linksVideos = await page.evaluate(() => {
-      const links = [];
-      document.querySelectorAll('a[href*="/video/"]').forEach(a => { if (a.href && !links.includes(a.href)) links.push(a.href); });
-      return links.slice(0, 10);
-    });
-
-    if (linksVideos.length === 0) {
-      await context.close();
-      return res.json({ status: "ignorado", mensagem: "Nenhum vídeo encontrado no perfil", username: `@${user}` });
-    }
-
-    const curtidos = [];
-    const erros = [];
-
-    for (let i = 0; i < Math.min(qtd, linksVideos.length); i++) {
-      const videoUrl = linksVideos[i];
-      try {
-        await page.goto(videoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-        await page.waitForTimeout(4000 + Math.random() * 2000);
-        await fecharModais(page);
-
-        let botaoCurtir = null;
-        for (const sel of ['button[data-e2e="like-button"]', 'button[data-e2e="browse-like-button"]', '[data-e2e="like-icon"]']) {
-          botaoCurtir = await page.$(sel);
-          if (botaoCurtir) break;
-        }
-
-        if (botaoCurtir) {
-          const jaCurtiu = await page.evaluate(el => {
-            const btn = el.tagName === "BUTTON" ? el : el.closest("button");
-            return btn?.getAttribute("aria-pressed") === "true";
-          }, botaoCurtir);
-
-          if (jaCurtiu) {
-            curtidos.push({ url: videoUrl, status: "ja_curtido" });
-          } else {
-            await page.evaluate((el) => el.click(), botaoCurtir);
-            await page.waitForTimeout(1500);
-            curtidos.push({ url: videoUrl, status: "curtido" });
-            console.log(`[TikTok] ❤️ Curtiu: ${videoUrl}`);
-          }
-        } else {
-          erros.push({ url: videoUrl, motivo: "botão curtir não encontrado" });
-        }
-
-        await page.waitForTimeout(2000 + Math.random() * 2000);
-      } catch (e) {
-        erros.push({ url: videoUrl, motivo: e.message });
-      }
-    }
-
-    await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
-    await context.close();
-    return res.json({
-      status: "ok",
-      username: `@${user}`,
-      curtidos: curtidos.filter(c => c.status === "curtido").length,
-      ja_curtidos: curtidos.filter(c => c.status === "ja_curtido").length,
-      erros: erros.length,
-      detalhes: { curtidos, erros }
-    });
-  } catch (error) {
-    if (context) await context.close().catch(() => {});
-    console.error(`[TikTok] ERRO curtir: ${error.message}`);
-    return res.status(500).json({ status: "erro", mensagem: error.message, username: `@${user}` });
+app.get('/tiktok/screenshot', (req, res) => {
+  const screenshotPath = '/app/tiktok-debug.png';
+  
+  if (fs.existsSync(screenshotPath)) {
+    res.sendFile(screenshotPath);
+  } else {
+    res.status(404).json({ erro: 'Screenshot não encontrado. Execute /tiktok/seguir primeiro.' });
   }
-});
-
-// ============================================
-// ROTA: VER SCREENSHOT DO TIKTOK
-// ============================================
-app.get("/tiktok-screenshot", (req, res) => {
-  const arquivo = "/app/tiktok-debug.png";
-  if (fs.existsSync(arquivo)) res.sendFile(path.resolve(arquivo));
-  else res.json({ status: "erro", mensagem: "Screenshot não encontrado." });
-});
-
-// ============================================
-// ROTA: VER SCREENSHOT DO SHEIN
-// ============================================
-app.get("/debug-screenshot", (req, res) => {
-  const arquivo = "/tmp/shein-debug.png";
-  if (fs.existsSync(arquivo)) res.sendFile(path.resolve(arquivo));
-  else res.json({ status: "erro", mensagem: "Screenshot não encontrado." });
 });
 
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`http://localhost:${PORT}`);
+  console.log("");
+  console.log("Endpoints disponíveis:");
+  console.log("  GET  /                  - Info da API");
+  console.log("  GET  /ofertas           - Buscar ofertas do dia (ML)");
+  console.log("  GET  /ofertas/:cat      - Buscar ofertas por categoria (ML)");
+  console.log("  POST /mercado-simples   - Gerar link de afiliado (ML)");
+  console.log("  POST /mercado           - Gerar link (tenta encurtar) (ML)");
+  console.log("  POST /mercado-oficial   - Gerar link meli.la oficial (ML)");
+  console.log("  GET  /amazon            - Buscar ofertas Amazon (nacionais + internacionais) ✨");
+  console.log("  GET  /amazon?tipo=nacionais     - Só nacionais");
+  console.log("  GET  /amazon?tipo=internacionais - Só internacionais");
+  console.log("  POST /amazon-link       - Gerar link de afiliado Amazon");
+  console.log("  POST /amazon-buscar     - Buscar produtos via Creators API ✨");
+  console.log("  POST /amazon-produto    - Detalhes de produto por ASIN ✨");
+  console.log("  GET  /shein?categoria=moda      - Buscar produtos Shein ✨");
+  console.log("  POST /tiktok/seguir     - Seguir creator no TikTok ✨");
+  console.log("  GET  /tiktok/screenshot - Ver screenshot TikTok");
+  console.log("  GET  /debug-screenshot  - Ver último screenshot Playwright");
+});
