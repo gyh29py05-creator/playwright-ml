@@ -20,7 +20,7 @@ const AMAZON_TAG = process.env.AMAZON_TAG || "giseleramosd-20";
 const CREATORS_CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 
- // ============================================
+// ============================================
 // COOKIES DO TIKTOK (atualizados 16/05/2026)
 // ============================================
 const TIKTOK_COOKIES = [
@@ -53,6 +53,12 @@ const TIKTOK_COOKIES = [
   { name: "store-country-code", value: "br", domain: ".tiktok.com", path: "/" },
   { name: "tt-target-idc", value: "alisg", domain: ".tiktok.com", path: "/" }
 ];
+
+// ============================================
+// COOKIES DINÂMICOS (atualizados via API)
+// ============================================
+let cookiesCustom = null;
+
 // ============================================
 // TOKEN AMAZON CREATORS API
 // ============================================
@@ -98,7 +104,68 @@ async function abrirBrowser() {
 }
 
 // ============================================
-// HELPER: página TikTok com cookies e stealth
+// HELPER: TikTok com PERFIL PERSISTENTE
+// Salva histórico, cookies e fingerprint em disco
+// ============================================
+const PERFIL_PATH = "/app/tiktok-profile";
+
+async function getTikTokPage() {
+  // Garante que a pasta do perfil existe
+  if (!fs.existsSync(PERFIL_PATH)) {
+    fs.mkdirSync(PERFIL_PATH, { recursive: true });
+    console.log("[TikTok] Pasta de perfil criada:", PERFIL_PATH);
+  }
+
+  const context = await chromium.launchPersistentContext(PERFIL_PATH, {
+    headless: true,
+    args: [
+      "--no-sandbox", "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-dev-shm-usage", "--disable-gpu",
+      "--single-process", "--no-zygote"
+    ],
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    viewport: { width: 1920, height: 1080 },
+    locale: "pt-BR"
+  });
+
+  // Injeta cookies só se o perfil ainda não tem sessão salva
+  const cookiesExistentes = await context.cookies("https://www.tiktok.com");
+  const temSessao = cookiesExistentes.some(c => c.name === "sessionid");
+
+  if (!temSessao) {
+    const cookies = cookiesCustom || TIKTOK_COOKIES;
+    await context.addCookies(cookies);
+    console.log(`[TikTok] Perfil novo — ${cookies.length} cookies injetados`);
+  } else {
+    // Sempre atualiza msToken e ttwid que expiram rápido
+    const cookiesFrescos = cookiesCustom || TIKTOK_COOKIES;
+    const cookiesParaAtualizar = cookiesFrescos.filter(c =>
+      ["msToken", "ttwid", "odin_tt", "tt_csrf_token"].includes(c.name)
+    );
+    if (cookiesParaAtualizar.length > 0) {
+      await context.addCookies(cookiesParaAtualizar);
+    }
+    console.log("[TikTok] Perfil existente — sessão reutilizada");
+  }
+
+  const page = await context.newPage();
+
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
+    Object.defineProperty(navigator, "languages", { get: () => ["pt-BR", "pt", "en"] });
+    const orig = window.navigator.permissions.query;
+    window.navigator.permissions.query = (p) =>
+      p.name === "notifications" ? Promise.resolve({ state: Notification.permission }) : orig(p);
+    window.chrome = { runtime: {} };
+  });
+
+  return { context, page };
+}
+
+// ============================================
+// HELPER: página TikTok simples (para rotas não-TikTok)
 // ============================================
 async function criarPaginaTikTok(browser) {
   const context = await browser.newContext({
@@ -106,7 +173,7 @@ async function criarPaginaTikTok(browser) {
     viewport: { width: 1920, height: 1080 },
     locale: "pt-BR"
   });
-  await context.addCookies(TIKTOK_COOKIES);
+  await context.addCookies(cookiesCustom || TIKTOK_COOKIES);
   const page = await context.newPage();
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
@@ -141,7 +208,7 @@ async function fecharModais(page) {
 // ============================================
 app.get("/", (req, res) => {
   res.json({
-    status: "online", versao: "9.0",
+    status: "online", versao: "10.0",
     endpoints: {
       "GET /ofertas": "Busca ofertas do dia (Mercado Livre)",
       "GET /ofertas/:categoria": "Busca ofertas por categoria (ML)",
@@ -155,9 +222,66 @@ app.get("/", (req, res) => {
       "POST /shein-link": "Gera link de afiliado Shein",
       "POST /tiktok/seguir": "Segue um creator no TikTok",
       "POST /tiktok/curtir": "Curte vídeos de um creator { username, quantidade }",
+      "POST /tiktok/cookies": "Atualiza cookies TikTok sem redeploy { senha, cookies }",
+      "GET /tiktok/cookies/status": "Ver status dos cookies atuais",
       "GET /tiktok-screenshot": "Ver último screenshot do TikTok",
       "GET /debug-screenshot": "Ver último screenshot Shein"
     }
+  });
+});
+
+// ============================================
+// ROTA: ATUALIZAR COOKIES TIKTOK SEM REDEPLOY
+// POST /tiktok/cookies
+// Body: { "senha": "gyh2024", "cookies": "sessionid=xxx; msToken=yyy; ..." }
+// ============================================
+app.post("/tiktok/cookies", (req, res) => {
+  const { cookies, senha } = req.body;
+  if (senha !== (process.env.ADMIN_SENHA || "gyh2024")) {
+    return res.status(401).json({ status: "erro", mensagem: "Senha incorreta" });
+  }
+  if (!cookies) {
+    return res.status(400).json({ status: "erro", mensagem: "cookies não fornecido" });
+  }
+  cookiesCustom = cookies.split(";").map(c => {
+    const [nome, ...resto] = c.trim().split("=");
+    return {
+      name: nome.trim(),
+      value: resto.join("=").trim(),
+      domain: ".tiktok.com",
+      path: "/"
+    };
+  }).filter(c => c.name && c.value);
+
+  // Apaga o perfil salvo para forçar reinjeção com cookies novos
+  try {
+    if (fs.existsSync(PERFIL_PATH)) {
+      fs.rmSync(PERFIL_PATH, { recursive: true, force: true });
+      console.log("[TikTok] Perfil antigo removido para reinjeção de cookies");
+    }
+  } catch(e) {}
+
+  console.log(`[TikTok] Cookies atualizados via API: ${cookiesCustom.length} cookies`);
+  res.json({
+    status: "ok",
+    mensagem: `${cookiesCustom.length} cookies atualizados. Perfil resetado para nova sessão.`,
+    cookies_salvos: cookiesCustom.map(c => c.name)
+  });
+});
+
+// ============================================
+// ROTA: STATUS DOS COOKIES
+// ============================================
+app.get("/tiktok/cookies/status", (req, res) => {
+  const fonte = cookiesCustom ? "dinamico (atualizado via API)" : "estatico (codigo)";
+  const lista = cookiesCustom || TIKTOK_COOKIES;
+  const perfilExiste = fs.existsSync(PERFIL_PATH);
+  res.json({
+    status: "ok",
+    fonte,
+    perfil_persistente: perfilExiste,
+    total_cookies: lista.length,
+    cookies: lista.map(c => c.name)
   });
 });
 
@@ -398,10 +522,12 @@ app.post("/tiktok/seguir", async (req, res) => {
   if (!username) return res.status(400).json({ status: "erro", mensagem: "username não fornecido" });
   const user = username.startsWith("@") ? username.slice(1) : username;
   console.log(`[TikTok] Seguindo: @${user}`);
-  let browser;
+  let context;
   try {
-    browser = await abrirBrowser();
-    const page = await criarPaginaTikTok(browser);
+    const resultado = await getTikTokPage();
+    context = resultado.context;
+    const page = resultado.page;
+
     await page.goto(`https://www.tiktok.com/@${user}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForTimeout(8000);
     await page.mouse.move(500, 300);
@@ -409,15 +535,11 @@ app.post("/tiktok/seguir", async (req, res) => {
     await fecharModais(page);
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
 
-    // ✅ SELETOR CORRETO: botão Follow do HEADER do perfil, não dos suggested accounts
-    // O header do perfil fica dentro de [data-e2e="user-page-follow-button"]
-    // ou dentro do container [data-e2e="user-info-container"]
     let botaoSeguir = null;
 
     // Tentativa 1: seletor específico do header do perfil
     for (const sel of [
       '[data-e2e="user-page-follow-button"]',
-      '[data-e2e="follow-button"][aria-label*="${user}"]',
       'div[data-e2e="user-info-container"] button[data-e2e="follow-button"]',
       'div[class*="ShareLayoutHeader"] button[data-e2e="follow-button"]',
       'div[class*="user-page"] button[data-e2e="follow-button"]',
@@ -429,13 +551,12 @@ app.post("/tiktok/seguir", async (req, res) => {
       }
     }
 
-    // Tentativa 2: pegar TODOS os botões Follow e pegar o PRIMEIRO que está no topo da página
-    // (acima de y=400px para evitar os suggested accounts que ficam abaixo)
+    // Tentativa 2: pegar pelo Y < 400px (header fica no topo)
     if (!botaoSeguir) {
       const todosBotoes = await page.$$('button[data-e2e="follow-button"]');
       for (const btn of todosBotoes) {
         const box = await btn.boundingBox();
-        if (box && box.y < 400) { // header do perfil fica no topo
+        if (box && box.y < 400) {
           botaoSeguir = btn;
           console.log(`[TikTok] Botão encontrado por posição Y=${box.y}`);
           break;
@@ -443,34 +564,8 @@ app.post("/tiktok/seguir", async (req, res) => {
       }
     }
 
-    // Tentativa 3: buscar por texto dentro do header (container específico)
     if (!botaoSeguir) {
-      const resultado = await page.evaluate(() => {
-        // Pega o header do perfil — fica antes da seção de sugestões
-        const headerSelectors = [
-          'div[class*="DivShareLayoutHeaderAction"]',
-          'div[class*="user-page-header"]',
-          'div[class*="UserPage"] > div:first-child',
-        ];
-        for (const sel of headerSelectors) {
-          const container = document.querySelector(sel);
-          if (container) {
-            const btns = container.querySelectorAll('button');
-            for (const btn of btns) {
-              const texto = btn.innerText.toLowerCase();
-              if (texto === 'seguir' || texto === 'follow') return true;
-            }
-          }
-        }
-        return false;
-      });
-      if (resultado) {
-        botaoSeguir = await page.$('div[class*="DivShareLayoutHeaderAction"] button, div[class*="user-page-header"] button');
-      }
-    }
-
-    if (!botaoSeguir) {
-      await browser.close();
+      await context.close();
       return res.json({ status: "ignorado", mensagem: "Botão de seguir não encontrado no perfil", username: `@${user}` });
     }
 
@@ -478,24 +573,22 @@ app.post("/tiktok/seguir", async (req, res) => {
     const textoBotao = await botaoSeguir.innerText().catch(() => "");
     console.log(`[TikTok] Texto do botão: "${textoBotao}"`);
     if (textoBotao.toLowerCase().includes("seguindo") || textoBotao.toLowerCase().includes("following")) {
-      await browser.close();
+      await context.close();
       return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
     }
 
-    // Scroll suave e clique via JS (contorna pointer-events do overlay)
-    await page.evaluate(() => window.scrollTo(0, 0)); // volta ao topo para ter certeza
+    // Scroll ao topo, fechar modais, clicar via JS
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(800);
-    await fecharModais(page); // tenta fechar modal de novo antes do clique
+    await fecharModais(page);
     await page.evaluate((el) => el.click(), botaoSeguir);
     await page.waitForTimeout(3000);
 
-    // Verifica se realmente seguiu
     const textoPosClique = await botaoSeguir.innerText().catch(() => "");
     console.log(`[TikTok] Texto após clique: "${textoPosClique}"`);
-
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
     console.log(`[TikTok] ✅ Seguiu @${user}`);
-    await browser.close();
+    await context.close();
 
     const confirmado = textoPosClique.toLowerCase().includes("seguindo") || textoPosClique.toLowerCase().includes("following");
     return res.json({
@@ -506,11 +599,12 @@ app.post("/tiktok/seguir", async (req, res) => {
       botao_texto: textoPosClique
     });
   } catch (error) {
-    if (browser) await browser.close();
+    if (context) await context.close().catch(() => {});
     console.error(`[TikTok] ERRO: ${error.message}`);
     return res.status(500).json({ status: "erro", mensagem: error.message, username: `@${user}` });
   }
 });
+
 // ============================================
 // ROTA: CURTIR VÍDEOS DE UM CREATOR NO TIKTOK
 // Body: { "username": "@usuario", "quantidade": 3 }
@@ -522,17 +616,17 @@ app.post("/tiktok/curtir", async (req, res) => {
   const user = username.startsWith("@") ? username.slice(1) : username;
   const qtd = Math.min(parseInt(quantidade) || 3, 10);
   console.log(`[TikTok] Curtindo ${qtd} vídeo(s) de @${user}`);
-  let browser;
+  let context;
   try {
-    browser = await abrirBrowser();
-    const page = await criarPaginaTikTok(browser);
+    const resultado = await getTikTokPage();
+    context = resultado.context;
+    const page = resultado.page;
 
     await page.goto(`https://www.tiktok.com/@${user}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForTimeout(8000);
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
     await fecharModais(page);
 
-    // Coleta links dos vídeos do perfil
     const linksVideos = await page.evaluate(() => {
       const links = [];
       document.querySelectorAll('a[href*="/video/"]').forEach(a => { if (a.href && !links.includes(a.href)) links.push(a.href); });
@@ -540,7 +634,7 @@ app.post("/tiktok/curtir", async (req, res) => {
     });
 
     if (linksVideos.length === 0) {
-      await browser.close();
+      await context.close();
       return res.json({ status: "ignorado", mensagem: "Nenhum vídeo encontrado no perfil", username: `@${user}` });
     }
 
@@ -585,7 +679,7 @@ app.post("/tiktok/curtir", async (req, res) => {
     }
 
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
-    await browser.close();
+    await context.close();
     return res.json({
       status: "ok",
       username: `@${user}`,
@@ -595,7 +689,7 @@ app.post("/tiktok/curtir", async (req, res) => {
       detalhes: { curtidos, erros }
     });
   } catch (error) {
-    if (browser) await browser.close();
+    if (context) await context.close().catch(() => {});
     console.error(`[TikTok] ERRO curtir: ${error.message}`);
     return res.status(500).json({ status: "erro", mensagem: error.message, username: `@${user}` });
   }
