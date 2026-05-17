@@ -206,6 +206,11 @@ app.get("/ofertas/:categoria", async (req, res) => {
         try {
           const titulo = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim();
           const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim();
+          const avaliacaoEl = card.querySelector('[class*="reviews"], [class*="rating"]');
+const avaliacao = avaliacaoEl ? avaliacaoEl.textContent.trim() : "";
+          const avaliacaoEl = card.querySelector('.poly-reviews__rating');
+          const cupomEl = card.querySelector('[class*="coupon"], [class*="coupon-tag"], [class*="promotion"]');
+const cupom = cupomEl ? cupomEl.textContent.trim() : "";
           const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
           const link = card.querySelector("a")?.href || "";
           const imagem = card.querySelector("img")?.src || "";
@@ -219,6 +224,156 @@ app.get("/ofertas/:categoria", async (req, res) => {
     res.json({ status: "ok", categoria, total: produtos.length, produtos });
   } catch (error) {
     res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+app.get("/bugs", async (req, res) => {
+  try {
+
+    console.log("🔥 Buscando bugs de preço...");
+
+    const browser = await abrirBrowser();
+
+    const context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: { width: 1920, height: 1080 },
+      locale: "pt-BR",
+    });
+
+    const page = await context.newPage();
+
+    await page.goto(
+      "https://www.mercadolivre.com.br/ofertas?category=MLB1574&filter_applied=category&filter_position=4&origin=qcat",
+      {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      }
+    );
+
+    await page.waitForTimeout(5000);
+
+    const items = await page.$$eval(
+      ".promotion-item, .poly-card",
+      (cards) => {
+
+        return cards.map((card, index) => {
+
+          let titulo = "";
+
+          for (const sel of [
+            "h2",
+            "h3",
+            "a[class*='title']",
+            ".poly-component__title"
+          ]) {
+
+            const el = card.querySelector(sel);
+
+            if (el && el.textContent.trim()) {
+              titulo = el.textContent.trim();
+              break;
+            }
+          }
+
+          const precoEl = card.querySelector(
+            ".andes-money-amount__fraction, [class*='price-tag-fraction']"
+          );
+
+          const preco = precoEl
+            ? parseFloat(
+                precoEl.textContent
+                  .trim()
+                  .replace(/[^\d]/g, "")
+              )
+            : 0;
+
+          const descontoEl = card.querySelector(
+            "[class*='discount'], [class*='off']"
+          );
+
+          const desconto = descontoEl
+            ? descontoEl.textContent.trim()
+            : "";
+
+          const cupomEl = card.querySelector(
+            "[class*='coupon'], [class*='promotion']"
+          );
+
+          const cupom = cupomEl
+            ? cupomEl.textContent.trim()
+            : "";
+
+          const linkEl = card.querySelector("a");
+
+          const link = linkEl
+            ? linkEl.href
+            : "";
+
+          const imgEl = card.querySelector("img");
+
+          const imagem = imgEl
+            ? (imgEl.src || imgEl.getAttribute("data-src") || "")
+            : "";
+
+          return {
+            titulo,
+            preco,
+            desconto,
+            cupom,
+            link,
+            imagem,
+            posicao: index + 1,
+          };
+        });
+      }
+    );
+
+    // 🔥 FILTRO DE BUGS
+
+    const bugs = items.filter(item => {
+
+      const titulo = item.titulo.toLowerCase();
+
+      const descontoNumero = parseInt(
+        item.desconto.replace(/\D/g, "")
+      ) || 0;
+
+      if (descontoNumero >= 70) return true;
+
+      if (
+        titulo.includes("iphone") &&
+        item.preco < 1800
+      ) return true;
+
+      if (
+        titulo.includes("notebook") &&
+        item.preco < 1500
+      ) return true;
+
+      if (
+        titulo.includes("playstation") &&
+        item.preco < 2500
+      ) return true;
+
+      return false;
+    });
+
+    await browser.close();
+
+    res.json({
+      status: "ok",
+      total_bugs: bugs.length,
+      bugs,
+    });
+
+  } catch (e) {
+
+    console.error(e);
+
+    res.status(500).json({
+      erro: true,
+      mensagem: e.message,
+    });
   }
 });
 
