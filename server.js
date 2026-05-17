@@ -251,8 +251,15 @@ app.get("/ofertas", async (req, res) => {
           const imagem = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
           const descontoEl = card.querySelector("[class*='discount'], [class*='off']");
           const desconto = descontoEl ? descontoEl.textContent.trim() : "";
+          const avaliacao = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
+          const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
+          const qtd_avaliacoes = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
+          const vendidosEl = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
+          const qtd_vendidos = vendidosEl ? vendidosEl.textContent.trim() : "";
+          const maisVendidoEl = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
+          const mais_vendido = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
           if (titulo && titulo.length > 3) {
-            items.push({ titulo, preco, desconto, link, imagem, posicao: index + 1 });
+            items.push({ titulo, preco, desconto, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, link, imagem, posicao: index + 1 });
           }
         } catch (e) {}
       });
@@ -284,11 +291,17 @@ app.get("/ofertas/:categoria", async (req, res) => {
           const titulo = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim() || "";
           const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim() || "";
           const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const avaliacao = card.querySelector(".poly-reviews__rating")?.textContent?.trim() || "";
+          const avaliacao = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
+          const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
+          const qtd_avaliacoes = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
+          const vendidosEl = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
+          const qtd_vendidos = vendidosEl ? vendidosEl.textContent.trim() : "";
+          const maisVendidoEl = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
+          const mais_vendido = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
           const cupom = card.querySelector("[class*='coupon'], [class*='coupon-tag'], [class*='promotion']")?.textContent?.trim() || "";
           const link = card.querySelector("a")?.href || "";
           const imagem = card.querySelector("img")?.src || "";
-          if (titulo && link) items.push({ titulo, preco, avaliacao, cupom, link, imagem, posicao: index + 1 });
+          if (titulo && link) items.push({ titulo, preco, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, cupom, link, imagem, posicao: index + 1 });
         } catch (e) {}
       });
       return items;
@@ -334,10 +347,17 @@ app.get("/bugs", async (req, res) => {
         const desconto = descontoEl ? descontoEl.textContent.trim() : "";
         const cupomEl = card.querySelector("[class*='coupon'], [class*='promotion']");
         const cupom = cupomEl ? cupomEl.textContent.trim() : "";
+        const avaliacao = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
+        const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
+        const qtd_avaliacoes = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
+        const vendidosEl = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
+        const qtd_vendidos = vendidosEl ? vendidosEl.textContent.trim() : "";
+        const maisVendidoEl = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
+        const mais_vendido = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
         const link = card.querySelector("a")?.href || "";
         const imgEl = card.querySelector("img");
         const imagem = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
-        return { titulo, preco, desconto, cupom, link, imagem, posicao: index + 1 };
+        return { titulo, preco, desconto, cupom, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, link, imagem, posicao: index + 1 };
       });
     });
 
