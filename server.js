@@ -710,7 +710,7 @@ app.post("/amazon-produto", async (req, res) => {
 
 // ============================================
 // ROTA: BUSCAR PRODUTOS SHEIN
-// Foca em Women Exclusive com produtos femininos de qualidade
+// Foca em produtos femininos de qualidade
 // Captura: avaliação, vendidos, badge, desconto, entrega local
 // ============================================
 app.get("/shein", async (req, res) => {
@@ -725,9 +725,9 @@ app.get("/shein", async (req, res) => {
     // Palavras que indicam produto fora do nicho de moda feminina
     const palavrasRuins = [
       "sutiã", "sutia", "cueca", "lingerie", "calcinha", "bralette",
-      "push up", "sem alça", "transparente", "sexy", "hot",
+      "push up", "sem alça", "transparente", "sexy",
       "capa de celular", "capinha", "telefone", "triturador", "utensílio",
-      "cozinha", "organizador", "cabide", "adesivo", "amou primeiro"
+      "cozinha", "cabide", "adesivo", "amou primeiro"
     ];
 
     // Palavras que confirmam que é roupa feminina (pelo menos uma precisa estar)
