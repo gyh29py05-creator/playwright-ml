@@ -7,7 +7,6 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-
 const app = express();
 app.use(express.json());
 
@@ -19,7 +18,7 @@ const CREATORS_CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CREATORS_CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 
 // ============================================
-// COOKIES DO TIKTOK (atualizados)
+// COOKIES DO TIKTOK
 // ============================================
 const TIKTOK_COOKIES = [
   { name: "tt_csrf_token", value: "fMWbLlP0-bWNFgfrqY75qGjQbytPs6rzPsDs", domain: ".tiktok.com", path: "/" },
@@ -102,15 +101,94 @@ async function abrirBrowser() {
 }
 
 // ============================================
+// LÓGICA DE BUGS: REGRAS POR PLATAFORMA
+// ============================================
+
+/**
+ * Regras de bug para Mercado Livre.
+ * Detecta descontos absurdos e preços muito abaixo do mercado
+ * para categorias específicas de alto valor.
+ */
+function detectarBugML(item) {
+  const titulo = (item.titulo || "").toLowerCase();
+  const desconto = parseInt((item.desconto || "").replace(/\D/g, "")) || 0;
+  const preco = item.preco || 0;
+  const razoes = [];
+
+  if (desconto >= 70) razoes.push(`desconto de ${desconto}% (acima de 70%)`);
+  if (titulo.includes("iphone") && preco > 0 && preco < 1800) razoes.push(`iPhone por R$${preco} (suspeito abaixo de R$1.800)`);
+  if (titulo.includes("notebook") && preco > 0 && preco < 1500) razoes.push(`Notebook por R$${preco} (suspeito abaixo de R$1.500)`);
+  if (titulo.includes("playstation") && preco > 0 && preco < 2500) razoes.push(`PlayStation por R$${preco} (suspeito abaixo de R$2.500)`);
+  if (titulo.includes("macbook") && preco > 0 && preco < 3000) razoes.push(`MacBook por R$${preco} (suspeito abaixo de R$3.000)`);
+  if (titulo.includes("tv") && titulo.includes("55") && preco > 0 && preco < 1200) razoes.push(`TV 55" por R$${preco} (suspeito abaixo de R$1.200)`);
+  if (titulo.includes("air fryer") && preco > 0 && preco < 80) razoes.push(`Air Fryer por R$${preco} (suspeito abaixo de R$80)`);
+  if (titulo.includes("robô") && titulo.includes("aspirador") && preco > 0 && preco < 300) razoes.push(`Robô aspirador por R$${preco} (suspeito abaixo de R$300)`);
+
+  if (razoes.length === 0) return null;
+  return { ...item, plataforma: "mercado_livre", razoes_bug: razoes };
+}
+
+/**
+ * Regras de bug para Amazon Brasil.
+ * Considera a margem típica de preços de marketplace e frete grátis Prime.
+ */
+function detectarBugAmazon(item) {
+  const titulo = (item.titulo || "").toLowerCase();
+  const preco = item.preco || 0;
+  const razoes = [];
+
+  if (preco <= 0) return null;
+
+  if (titulo.includes("iphone") && preco < 2000) razoes.push(`iPhone por R$${preco} (suspeito abaixo de R$2.000)`);
+  if (titulo.includes("kindle") && preco < 150) razoes.push(`Kindle por R$${preco} (suspeito abaixo de R$150)`);
+  if (titulo.includes("echo") && titulo.includes("dot") && preco < 60) razoes.push(`Echo Dot por R$${preco} (suspeito abaixo de R$60)`);
+  if ((titulo.includes("notebook") || titulo.includes("laptop")) && preco < 1800) razoes.push(`Notebook por R$${preco} (suspeito abaixo de R$1.800)`);
+  if (titulo.includes("fone") && titulo.includes("bluetooth") && preco < 30) razoes.push(`Fone Bluetooth por R$${preco} (suspeito abaixo de R$30)`);
+  if (titulo.includes("câmera") && preco < 500) razoes.push(`Câmera por R$${preco} (suspeito abaixo de R$500)`);
+  if (titulo.includes("monitor") && preco < 400) razoes.push(`Monitor por R$${preco} (suspeito abaixo de R$400)`);
+  if (titulo.includes("smartwatch") && preco < 80) razoes.push(`Smartwatch por R$${preco} (suspeito abaixo de R$80)`);
+  if (titulo.includes("galaxy") && titulo.includes("s") && preco < 1500) razoes.push(`Galaxy S por R$${preco} (suspeito abaixo de R$1.500)`);
+
+  if (razoes.length === 0) return null;
+  return { ...item, plataforma: "amazon", razoes_bug: razoes };
+}
+
+/**
+ * Regras de bug para Shein.
+ * Foca em preços fora do padrão da plataforma por categoria de moda/beleza.
+ */
+function detectarBugShein(item) {
+  const titulo = (item.titulo || "").toLowerCase();
+  const preco = item.preco || 0;
+  const razoes = [];
+
+  if (preco <= 0) return null;
+
+  if (preco < 5) razoes.push(`Produto por R$${preco} (abaixo de R$5 — possível erro de cadastro)`);
+  if ((titulo.includes("vestido") || titulo.includes("dress")) && preco < 15) razoes.push(`Vestido por R$${preco} (suspeito abaixo de R$15)`);
+  if ((titulo.includes("casaco") || titulo.includes("jaqueta") || titulo.includes("coat")) && preco < 20) razoes.push(`Casaco/Jaqueta por R$${preco} (suspeito abaixo de R$20)`);
+  if ((titulo.includes("biquíni") || titulo.includes("swimsuit")) && preco < 10) razoes.push(`Biquíni por R$${preco} (suspeito abaixo de R$10)`);
+  if ((titulo.includes("maquiagem") || titulo.includes("makeup") || titulo.includes("foundation")) && preco < 8) razoes.push(`Maquiagem por R$${preco} (suspeito abaixo de R$8)`);
+  if ((titulo.includes("conjunto") || titulo.includes("set")) && preco < 20) razoes.push(`Conjunto por R$${preco} (suspeito abaixo de R$20)`);
+  if ((titulo.includes("calça") || titulo.includes("pants")) && preco < 15) razoes.push(`Calça por R$${preco} (suspeito abaixo de R$15)`);
+
+  if (razoes.length === 0) return null;
+  return { ...item, plataforma: "shein", razoes_bug: razoes };
+}
+
+// ============================================
 // ROTA: INFO DA API
 // ============================================
 app.get("/", (req, res) => {
   res.json({
     status: "online",
-    versao: "7.0",
+    versao: "8.0",
     endpoints: {
       "GET /ofertas": "Busca ofertas do dia (Mercado Livre)",
       "GET /ofertas/:categoria": "Busca ofertas por categoria (ML)",
+      "GET /bugs": "Bugs de preço no Mercado Livre",
+      "GET /bugs/amazon": "Bugs de preço na Amazon",
+      "GET /bugs/shein": "Bugs de preço na Shein (?categoria=moda)",
       "POST /mercado-simples": "Gera link de afiliado ML simples",
       "POST /mercado-oficial": "Gera link meli.la oficial (ML)",
       "GET /amazon": "Busca ofertas Amazon",
@@ -139,11 +217,10 @@ app.get("/ofertas", async (req, res) => {
       locale: "pt-BR"
     });
     const page = await context.newPage();
-await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574#filter_applied=category&filter_position=4&origin=qcat",
-{
-  waitUntil: "domcontentloaded",
-  timeout: 30000
-});
+    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574#filter_applied=category&filter_position=4&origin=qcat", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
     await page.waitForTimeout(3000);
 
     for (let i = 1; i <= 5; i++) {
@@ -204,17 +281,14 @@ app.get("/ofertas/:categoria", async (req, res) => {
       const cards = document.querySelectorAll("div.poly-card, li.poly-component__item, div[class*='promotion-item']");
       cards.forEach((card, index) => {
         try {
-          const titulo = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim();
-          const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim();
-          const avaliacaoEl = card.querySelector('[class*="reviews"], [class*="rating"]');
-const avaliacao = avaliacaoEl ? avaliacaoEl.textContent.trim() : "";
-          const avaliacaoEl = card.querySelector('.poly-reviews__rating');
-          const cupomEl = card.querySelector('[class*="coupon"], [class*="coupon-tag"], [class*="promotion"]');
-const cupom = cupomEl ? cupomEl.textContent.trim() : "";
+          const titulo = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim() || "";
+          const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim() || "";
           const preco = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
+          const avaliacao = card.querySelector(".poly-reviews__rating")?.textContent?.trim() || "";
+          const cupom = card.querySelector("[class*='coupon'], [class*='coupon-tag'], [class*='promotion']")?.textContent?.trim() || "";
           const link = card.querySelector("a")?.href || "";
           const imagem = card.querySelector("img")?.src || "";
-          if (titulo && link) items.push({ titulo, preco, link, imagem, posicao: index + 1 });
+          if (titulo && link) items.push({ titulo, preco, avaliacao, cupom, link, imagem, posicao: index + 1 });
         } catch (e) {}
       });
       return items;
@@ -226,154 +300,222 @@ const cupom = cupomEl ? cupomEl.textContent.trim() : "";
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+
+// ============================================
+// ROTA: BUGS DE PREÇO - MERCADO LIVRE
+// ============================================
 app.get("/bugs", async (req, res) => {
   try {
-
-    console.log("🔥 Buscando bugs de preço...");
-
+    console.log("🔥 Buscando bugs ML...");
     const browser = await abrirBrowser();
-
     const context = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       viewport: { width: 1920, height: 1080 },
-      locale: "pt-BR",
+      locale: "pt-BR"
     });
-
     const page = await context.newPage();
 
-    await page.goto(
-      "https://www.mercadolivre.com.br/ofertas?category=MLB1574&filter_applied=category&filter_position=4&origin=qcat",
-      {
-        waitUntil: "domcontentloaded",
-        timeout: 30000,
-      }
-    );
-
+    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574&filter_applied=category&filter_position=4&origin=qcat", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
     await page.waitForTimeout(5000);
 
-    const items = await page.$$eval(
-      ".promotion-item, .poly-card",
-      (cards) => {
-
-        return cards.map((card, index) => {
-
-          let titulo = "";
-
-          for (const sel of [
-            "h2",
-            "h3",
-            "a[class*='title']",
-            ".poly-component__title"
-          ]) {
-
-            const el = card.querySelector(sel);
-
-            if (el && el.textContent.trim()) {
-              titulo = el.textContent.trim();
-              break;
-            }
-          }
-
-          const precoEl = card.querySelector(
-            ".andes-money-amount__fraction, [class*='price-tag-fraction']"
-          );
-
-          const preco = precoEl
-            ? parseFloat(
-                precoEl.textContent
-                  .trim()
-                  .replace(/[^\d]/g, "")
-              )
-            : 0;
-
-          const descontoEl = card.querySelector(
-            "[class*='discount'], [class*='off']"
-          );
-
-          const desconto = descontoEl
-            ? descontoEl.textContent.trim()
-            : "";
-
-          const cupomEl = card.querySelector(
-            "[class*='coupon'], [class*='promotion']"
-          );
-
-          const cupom = cupomEl
-            ? cupomEl.textContent.trim()
-            : "";
-
-          const linkEl = card.querySelector("a");
-
-          const link = linkEl
-            ? linkEl.href
-            : "";
-
-          const imgEl = card.querySelector("img");
-
-          const imagem = imgEl
-            ? (imgEl.src || imgEl.getAttribute("data-src") || "")
-            : "";
-
-          return {
-            titulo,
-            preco,
-            desconto,
-            cupom,
-            link,
-            imagem,
-            posicao: index + 1,
-          };
-        });
-      }
-    );
-
-    // 🔥 FILTRO DE BUGS
-
-    const bugs = items.filter(item => {
-
-      const titulo = item.titulo.toLowerCase();
-
-      const descontoNumero = parseInt(
-        item.desconto.replace(/\D/g, "")
-      ) || 0;
-
-      if (descontoNumero >= 70) return true;
-
-      if (
-        titulo.includes("iphone") &&
-        item.preco < 1800
-      ) return true;
-
-      if (
-        titulo.includes("notebook") &&
-        item.preco < 1500
-      ) return true;
-
-      if (
-        titulo.includes("playstation") &&
-        item.preco < 2500
-      ) return true;
-
-      return false;
+    const items = await page.$$eval(".promotion-item, .poly-card", (cards) => {
+      return cards.map((card, index) => {
+        let titulo = "";
+        for (const sel of ["h2", "h3", "a[class*='title']", ".poly-component__title"]) {
+          const el = card.querySelector(sel);
+          if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
+        }
+        const precoEl = card.querySelector(".andes-money-amount__fraction, [class*='price-tag-fraction']");
+        const preco = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d]/g, "")) : 0;
+        const descontoEl = card.querySelector("[class*='discount'], [class*='off']");
+        const desconto = descontoEl ? descontoEl.textContent.trim() : "";
+        const cupomEl = card.querySelector("[class*='coupon'], [class*='promotion']");
+        const cupom = cupomEl ? cupomEl.textContent.trim() : "";
+        const link = card.querySelector("a")?.href || "";
+        const imgEl = card.querySelector("img");
+        const imagem = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
+        return { titulo, preco, desconto, cupom, link, imagem, posicao: index + 1 };
+      });
     });
 
     await browser.close();
 
+    const bugs = items
+      .map(detectarBugML)
+      .filter(Boolean);
+
     res.json({
       status: "ok",
+      plataforma: "mercado_livre",
       total_bugs: bugs.length,
-      bugs,
+      data_extracao: new Date().toISOString(),
+      bugs
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ROTA: BUGS DE PREÇO - AMAZON
+// ============================================
+app.get("/bugs/amazon", async (req, res) => {
+  try {
+    console.log("🔥 Buscando bugs Amazon...");
+    const browser = await abrirBrowser();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: { width: 1920, height: 1080 },
+      locale: "pt-BR"
+    });
+    const page = await context.newPage();
+
+    // Busca em categorias com mais probabilidade de bug
+    const urlsBusca = [
+      "https://www.amazon.com.br/s?k=eletronicos&deals-widget=%7B%22version%22%3A1%7D",
+      "https://www.amazon.com.br/gp/goldbox"
+    ];
+
+    const todosItens = [];
+
+    for (const url of urlsBusca) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(4000);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(2000);
+
+      const itens = await page.evaluate((urlAtual) => {
+        return Array.from(document.querySelectorAll('div[data-component-type="s-search-result"], div[data-asin]'))
+          .map((card, index) => {
+            const titulo = card.querySelector("h2 a span, h2 span, .s-title-instructions-style span")?.textContent?.trim() || "";
+            const precoInteiro = card.querySelector(".a-price-whole")?.textContent?.replace(/[^\d]/g, "") || "0";
+            const precoFracao = card.querySelector(".a-price-fraction")?.textContent?.replace(/[^\d]/g, "") || "00";
+            const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
+            const asin = card.getAttribute("data-asin") || "";
+            const link = asin ? `https://www.amazon.com.br/dp/${asin}` : "";
+            const imagem = card.querySelector("img.s-image, img[class*='product-image']")?.src || "";
+            const descontoEl = card.querySelector(".a-badge-text, [class*='savingsPercentage']");
+            const desconto = descontoEl ? descontoEl.textContent.trim() : "";
+            if (titulo && asin) return { titulo, preco, desconto, asin, link, imagem, posicao: index + 1 };
+            return null;
+          })
+          .filter(Boolean);
+      }, url);
+
+      todosItens.push(...itens);
+    }
+
+    await browser.close();
+
+    // Deduplica por ASIN
+    const unicos = todosItens.filter((p, i, arr) => arr.findIndex(x => x.asin === p.asin) === i);
+
+    const bugs = unicos
+      .map(detectarBugAmazon)
+      .filter(Boolean);
+
+    res.json({
+      status: "ok",
+      plataforma: "amazon",
+      total_analisados: unicos.length,
+      total_bugs: bugs.length,
+      data_extracao: new Date().toISOString(),
+      bugs
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ROTA: BUGS DE PREÇO - SHEIN
+// ============================================
+app.get("/bugs/shein", async (req, res) => {
+  try {
+    const { categoria = "promocao" } = req.query;
+    console.log(`🔥 Buscando bugs Shein (${categoria})...`);
+
+    const urls = {
+      "moda":           "https://br.shein.com/Women-Clothing-sc-017172961.html",
+      "moda-feminina":  "https://br.shein.com/Women-Clothing-sc-017172961.html",
+      "moda-masculina": "https://br.shein.com/Men-Clothing-sc-00864889.html",
+      "maquiagem":      "https://br.shein.com/Beauty-cat-1954.html?sort=7",
+      "casa":           "https://br.shein.com/Home-cat-1766.html?sort=7",
+      "promocao":       "https://br.shein.com/promotion/flash-sale"
+    };
+    const url = urls[categoria] || urls["promocao"];
+
+    const browser = await abrirBrowser();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: { width: 1920, height: 1080 },
+      locale: "pt-BR"
     });
 
-  } catch (e) {
+    await context.addCookies([
+      { name: "memberId", value: "1180825914", domain: ".shein.com", path: "/" },
+      { name: "AT", value: "MDEwMDE.eyJiIjo3LCJnIjoxNzc4ODgyNzY1LCJyIjoiWmZnQ2pvIiwidCI6MiwibSI6MTE4MDgyNTkxNCwibCI6MTc3ODg4Mjc2NX0.c7e8197dce8ec6cd.3345b7409e3d797c64baf023ec7356f6a80d14db69ba2638e3f090f0a6d18dc3", domain: ".shein.com", path: "/" },
+      { name: "sessionID_shein", value: "s%3A7S7sthaovE_Sy9eCpmLnzrOlwWc0Fwmi.37UHrLYj4Eq6Bfxhb4gOBJOuPly4kkpD32FjScputO4", domain: ".shein.com", path: "/" }
+    ]);
 
-    console.error(e);
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(8000);
 
-    res.status(500).json({
-      erro: true,
-      mensagem: e.message,
+    try {
+      await page.click('[class*="close"], .sui-popup-close', { timeout: 3000 });
+    } catch (e) {}
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(2000);
+
+    const itens = await page.evaluate(() => {
+      const items = [];
+      const seletores = ["[da-eid]", ".product-item-v3", ".S-product-item", "div[class*='product-item']"];
+      let cards = [];
+      for (const sel of seletores) {
+        cards = Array.from(document.querySelectorAll(sel));
+        if (cards.length > 0) break;
+      }
+      cards.forEach((card, index) => {
+        try {
+          const eid = card.getAttribute("da-eid") || "";
+          const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
+          const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
+          const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
+          const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
+          const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
+          if (titulo && preco > 0 && link) items.push({ titulo, preco, imagem, link, posicao: index + 1 });
+        } catch (e) {}
+      });
+      return items;
     });
+
+    await browser.close();
+
+    const bugs = itens
+      .map(detectarBugShein)
+      .filter(Boolean);
+
+    res.json({
+      status: "ok",
+      plataforma: "shein",
+      categoria,
+      total_analisados: itens.length,
+      total_bugs: bugs.length,
+      data_extracao: new Date().toISOString(),
+      bugs
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
 
@@ -658,19 +800,12 @@ app.post("/tiktok/seguir", async (req, res) => {
   let browser;
   try {
     browser = await abrirBrowser();
-   const context = await browser.newContext({
-  userAgent:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-
-  viewport: {
-    width: 1366,
-    height: 768
-  },
-
-  locale: "pt-BR",
-
-  timezoneId: "America/Sao_Paulo"
-});
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+      viewport: { width: 1366, height: 768 },
+      locale: "pt-BR",
+      timezoneId: "America/Sao_Paulo"
+    });
 
     await context.addCookies(TIKTOK_COOKIES);
     const page = await context.newPage();
@@ -699,7 +834,6 @@ app.post("/tiktok/seguir", async (req, res) => {
     const urlFinal = page.url();
     console.log(`[TikTok] Página: ${titulo} | ${urlFinal}`);
 
-    // Tenta encontrar o botão de seguir
     const seletores = [
       'button[data-e2e="follow-button"]',
       'button[data-e2e="follow-btn"]',
@@ -712,7 +846,6 @@ app.post("/tiktok/seguir", async (req, res) => {
       if (botaoSeguir) break;
     }
 
-    // Fallback: busca pelo texto do botão
     if (!botaoSeguir) {
       const botoes = await page.$$("button");
       for (const btn of botoes) {
@@ -740,7 +873,6 @@ app.post("/tiktok/seguir", async (req, res) => {
       return res.json({ status: "ignorado", mensagem: "Já segue esse creator", username: `@${user}` });
     }
 
-    // Fecha captcha se aparecer antes de clicar
     try {
       const captchaClose = await page.$('button[aria-label="Close"], [class*="captcha-close"], .captcha_verify_bar--close');
       if (captchaClose) {
@@ -748,31 +880,20 @@ app.post("/tiktok/seguir", async (req, res) => {
         console.log("[TikTok] Captcha fechado!");
         await page.waitForTimeout(2000);
       }
-    } catch(e) {}
+    } catch (e) {}
 
-    // Simula comportamento humano antes de clicar
-await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
+    await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
+    await page.waitForTimeout(1000 + Math.random() * 1500);
+    await page.mouse.move(300, 400);
+    await page.waitForTimeout(1000);
+    await page.mouse.move(500, 500);
+    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500 + Math.random() * 2000);
+    await botaoSeguir.hover();
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+    await botaoSeguir.click({ delay: 150 });
+    await page.waitForTimeout(5000);
 
-await page.waitForTimeout(1000 + Math.random() * 1500);
-
-await page.mouse.move(300, 400);
-await page.waitForTimeout(1000);
-
-await page.mouse.move(500, 500);
-await page.waitForTimeout(1000);
-
-await page.waitForTimeout(1500 + Math.random() * 2000);
-
-await botaoSeguir.hover();
-
-await page.waitForTimeout(2000 + Math.random() * 2000);
-
-await botaoSeguir.click({
-  delay: 150
-});
-
-await page.waitForTimeout(5000);
-    // Screenshot depois do clique
     await page.screenshot({ path: "/app/tiktok-debug.png", fullPage: false });
 
     console.log(`[TikTok] ✅ Seguiu @${user}`);
