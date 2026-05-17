@@ -799,15 +799,19 @@ app.get("/shein", async (req, res) => {
         }
         cards.forEach((card) => {
           try {
-            // Pega o href real do link do produto
-            const linkEl = card.querySelector("a[href*='/p-'], a[href*='.html']");
+            // Link está no elemento pai do card [da-eid]
+            const linkEl = card.closest("a[href*='shein.com']") 
+              || card.parentElement?.closest("a[href*='shein.com']")
+              || card.parentElement?.parentElement?.closest("a[href*='shein.com']")
+              || card.querySelector("a[href*='shein.com']");
             const linkRaw = linkEl ? linkEl.href : "";
-            // Garante que é link da Shein e remove parâmetros desnecessários
-            const link = linkRaw && linkRaw.includes("shein.com") 
-              ? linkRaw.split("?")[0] 
-              : "";
+            // Extrai só o ID do produto para gerar link curto limpo
+            const idMatch = linkRaw.match(/-p-(\d+)\.html/);
+            const link = idMatch 
+              ? `https://br.shein.com/p-p-${idMatch[1]}.html`
+              : linkRaw.split("?")[0];
 
-            const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
+            const titulo = card.querySelector('[class*="name"], [class*="title"]')?.textContent?.trim() || "";
 
             const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
             const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
