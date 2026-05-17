@@ -139,7 +139,11 @@ app.get("/ofertas", async (req, res) => {
       locale: "pt-BR"
     });
     const page = await context.newPage();
-    await page.goto("https://www.mercadolivre.com.br/ofertas", { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto("https://www.mercadolivre.com.br/ofertas?container_id=MLB773331-2&filter_applied=container_id&filter_position=14&is_recommended_domain=false&origin=scut",
+{
+  waitUntil: "domcontentloaded",
+  timeout: 30000
+});
     await page.waitForTimeout(3000);
 
     for (let i = 1; i <= 5; i++) {
