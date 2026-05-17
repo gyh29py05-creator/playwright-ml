@@ -709,25 +709,33 @@ app.post("/amazon-produto", async (req, res) => {
 
 // ============================================
 // ROTA: BUSCAR PRODUTOS SHEIN
-// Busca camisetas + linho + conjuntos numa lista única, ~50 produtos
+// Foca em Women Exclusive com produtos femininos de qualidade
+// Captura: avaliação, vendidos, badge, desconto, entrega local
 // ============================================
 app.get("/shein", async (req, res) => {
   try {
-    // Categorias curadas: camisetas bonitas, linho e conjuntos femininos
+    // Página Women Exclusive + subcategorias de moda feminina curadas
     const categoriasCuradas = [
-      { nome: "camisetas", url: "https://br.shein.com/Women-Tops-cat-1738.html?sort=7" },
-      { nome: "linho",     url: "https://br.shein.com/Women-Linen-cat-3007.html?sort=7" },
-      { nome: "conjuntos", url: "https://br.shein.com/Women-Two-piece-Outfits-cat-1885.html?sort=7" }
+      { nome: "exclusive",  url: "https://br.shein.com/exclusive/Women-Exclusive-sc-00400092.html" },
+      { nome: "linho",      url: "https://br.shein.com/Women-Linen-cat-3007.html?sort=7" },
+      { nome: "conjuntos",  url: "https://br.shein.com/Women-Two-piece-Outfits-cat-1885.html?sort=7" }
     ];
 
-    // Palavras que indicam produto ruim / título SEO spam
+    // Palavras que indicam produto fora do nicho de moda feminina
     const palavrasRuins = [
       "sutiã", "sutia", "cueca", "lingerie", "calcinha", "bralette",
       "push up", "sem alça", "transparente", "sexy", "hot",
-      "frases", "estampa de letra", "amou primeiro"
+      "capa de celular", "capinha", "telefone", "triturador", "utensílio",
+      "cozinha", "organizador", "cabide", "adesivo", "amou primeiro"
     ];
 
-    // Limpa título: remove barras, aspas escapadas e limita tamanho
+    // Palavras que confirmam que é roupa feminina (pelo menos uma precisa estar)
+    const palavrasBoas = [
+      "camiseta", "blusa", "vestido", "calça", "conjunto", "linho",
+      "saia", "shorts", "moletom", "jaqueta", "camisa", "top",
+      "feminina", "feminino", "mulher", "manga", "algodão", "tricot"
+    ];
+
     function limparTitulo(titulo) {
       return titulo
         .replace(/\\"/g, '"')
@@ -737,10 +745,11 @@ app.get("/shein", async (req, res) => {
         .substring(0, 80);
     }
 
-    // Filtra produtos ruins pelo título
     function produtoBom(titulo) {
       const t = titulo.toLowerCase();
-      return !palavrasRuins.some(p => t.includes(p));
+      const temPalavraRuim = palavrasRuins.some(p => t.includes(p));
+      const temPalavraBoa = palavrasBoas.some(p => t.includes(p));
+      return !temPalavraRuim && temPalavraBoa;
     }
 
     const browser = await abrirBrowser();
@@ -760,7 +769,7 @@ app.get("/shein", async (req, res) => {
     const todosProdutos = [];
 
     for (const cat of categoriasCuradas) {
-      console.log(`[Shein] Buscando categoria: ${cat.nome}`);
+      console.log(`[Shein] Buscando: ${cat.nome}`);
 
       await page.goto(cat.url, { waitUntil: "domcontentloaded", timeout: 60000 });
       await page.waitForTimeout(6000);
@@ -770,14 +779,13 @@ app.get("/shein", async (req, res) => {
         await page.click('[class*="close"], .sui-popup-close', { timeout: 3000 });
       } catch (e) {}
 
-      // Rola a página 8 vezes para carregar mais produtos
-      for (let i = 1; i <= 8; i++) {
+      // Rola 10 vezes para carregar bastante produto
+      for (let i = 1; i <= 10; i++) {
         await page.evaluate((step) => {
-          window.scrollTo(0, (document.body.scrollHeight / 8) * step);
+          window.scrollTo(0, (document.body.scrollHeight / 10) * step);
         }, i);
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(1200);
       }
-
       await page.waitForTimeout(2000);
 
       const itens = await page.evaluate((categoriaNome) => {
@@ -792,12 +800,51 @@ app.get("/shein", async (req, res) => {
           try {
             const eid = card.getAttribute("da-eid") || "";
             const link = eid ? `https://br.shein.com/p-p-${eid}.html` : "";
+
             const titulo = card.querySelector('[class*="title"], [class*="name"]')?.textContent?.trim() || "";
+
             const precoTexto = card.querySelector('[class*="price-new"], [class*="sale-price"]')?.textContent?.trim() || "";
             const preco = parseFloat(precoTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
+
+            const precoOrigTexto = card.querySelector('[class*="price-del"], [class*="original-price"]')?.textContent?.trim() || "";
+            const preco_original = parseFloat(precoOrigTexto.replace("R$", "").replace(/\./g, "").replace(",", ".")) || 0;
+
+            // Desconto em %
+            const descontoEl = card.querySelector('[class*="discount"], [class*="off-percent"], [class*="sale-percent"]');
+            const desconto = descontoEl ? descontoEl.textContent.trim() : "";
+
+            // Avaliação (estrelas)
+            const avaliacaoEl = card.querySelector('[class*="star-num"], [class*="review-num"], [class*="rating"]');
+            const avaliacao = avaliacaoEl ? avaliacaoEl.textContent.trim().replace(/[()]/g, "") : "";
+
+            // Quantidade vendida
+            const vendidosEl = card.querySelector('[class*="sold"], [class*="vendido"]');
+            const vendidos = vendidosEl ? vendidosEl.textContent.trim() : "";
+
+            // Badge (Local, Tendências, Mais Vendido, Oferta Relâmpago)
+            const badgeEl = card.querySelector('[class*="label"], [class*="badge"], [class*="tag-item"], [class*="flash"]');
+            const badge = badgeEl ? badgeEl.textContent.trim() : "";
+
+            // Entrega local
+            const localEl = card.querySelector('[class*="local"], [class*="delivery"]');
+            const entrega_local = localEl ? localEl.textContent.trim() : "";
+
             const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
+
             if (titulo && preco > 0 && link) {
-              items.push({ titulo, preco, imagem, link, categoria: categoriaNome });
+              items.push({
+                titulo,
+                preco,
+                preco_original,
+                desconto,
+                avaliacao,
+                vendidos,
+                badge,
+                entrega_local,
+                imagem,
+                link,
+                categoria: categoriaNome
+              });
             }
           } catch (e) {}
         });
@@ -811,7 +858,7 @@ app.get("/shein", async (req, res) => {
     await page.screenshot({ path: "/tmp/shein-debug.png" });
     await browser.close();
 
-    // Limpa títulos, filtra ruins e deduplica por link
+    // Limpa títulos, filtra ruins, deduplica por link
     const linksSeen = new Set();
     const produtos = todosProdutos
       .map((p, i) => ({ ...p, titulo: limparTitulo(p.titulo), posicao: i + 1 }))
