@@ -720,7 +720,7 @@ app.get("/shein", async (req, res) => {
       { nome: "exclusive",  url: "https://br.shein.com/exclusive/Women-Exclusive-sc-00400092.html" },
       { nome: "linho",      url: "https://br.shein.com/Women-Linen-cat-3007.html?sort=7" },
       { nome: "conjuntos",  url: "https://br.shein.com/Women-Two-piece-Outfits-cat-1885.html?sort=7" }
-      { nome: "conjuntos",  url: "https://br.shein.com/pdsearch/linho/?ici=s1`EditSearch`linho`_fb`d0`PageOthers&search_source=1&search_type=all&source=search&src_identifier=st%3D2%60sc%3Dlinho%60sr%3D0%60ps%3D1&src_identifier_pre_search=%22%22&src_module=search&src_tab_page_id=page_select_class1779058608243" }
+      { nome: "conjuntos",  url: "https://br.shein.com/pdsearch/linho/?ici=s1`EditSearch`linho"  }
     ];
 
     // Palavras que indicam produto fora do nicho de moda feminina
