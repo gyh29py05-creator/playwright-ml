@@ -748,9 +748,7 @@ app.get("/shein", async (req, res) => {
 
     function produtoBom(titulo) {
       const t = titulo.toLowerCase();
-      const temPalavraRuim = palavrasRuins.some(p => t.includes(p));
-      const temPalavraBoa = palavrasBoas.some(p => t.includes(p));
-      return !temPalavraRuim && temPalavraBoa;
+      return !palavrasRuins.some(p => t.includes(p));
     }
 
     const browser = await abrirBrowser();
