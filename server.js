@@ -499,11 +499,19 @@ app.post("/tiktok/seguir", async (req, res) => {
   let browser;
   try {
     browser = await abrirBrowser();
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport: { width: 1920, height: 1080 },
-      locale: "pt-BR"
-    });
+   const context = await browser.newContext({
+  userAgent:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+
+  viewport: {
+    width: 1366,
+    height: 768
+  },
+
+  locale: "pt-BR",
+
+  timezoneId: "America/Sao_Paulo"
+});
 
     await context.addCookies(TIKTOK_COOKIES);
     const page = await context.newPage();
@@ -586,7 +594,20 @@ app.post("/tiktok/seguir", async (req, res) => {
     // Simula comportamento humano antes de clicar
     await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 200));
     await page.waitForTimeout(1000 + Math.random() * 1500);
-    await botaoSeguir.click({ force: true });
+    await page.mouse.move(300, 400);
+await page.waitForTimeout(1000);
+
+await page.mouse.move(500, 500);
+await page.waitForTimeout(1000);
+
+await botaoSeguir.hover();
+await page.waitForTimeout(2000);
+
+await botaoSeguir.click({
+  delay: 150
+});
+
+await page.waitForTimeout(5000);
     await page.waitForTimeout(2000);
 
     // Screenshot depois do clique
