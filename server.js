@@ -443,7 +443,190 @@ function detectarBugShopee(item) {
   
   return { ...item, plataforma: "shopee", razoes_bug: razoes, pontuacao, classificacao: classificacao.nivel };
 }
+// ============================================
+// ROTA: OFERTAS DO DIA - MERCADO LIVRE
+// ============================================
+app.get("/ofertas", async (req, res) => {
+  try {
+    console.log("🔄 Buscando ofertas ML...");
+    const browser = await abrirBrowser();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport:  { width: 1920, height: 1080 },
+      locale:    "pt-BR"
+    });
+    const page = await context.newPage();
+    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574#filter_applied=category&filter_position=4&origin=qcat", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    await page.waitForTimeout(3000);
 
+    for (let i = 1; i <= 5; i++) {
+      await page.evaluate((step) => window.scrollTo(0, (document.body.scrollHeight / 5) * step), i);
+      await page.waitForTimeout(2000);
+    }
+
+    const produtos = await page.evaluate(() => {
+      const items = [];
+      const seletores = ["article", "div[class*='ui-search-result']", "li[class*='ui-search-layout__item']", "div.poly-card"];
+      let cards = [];
+      for (const sel of seletores) {
+        cards = Array.from(document.querySelectorAll(sel));
+        if (cards.length > 0) break;
+      }
+      cards.forEach((card, index) => {
+        try {
+          let titulo = "";
+          for (const sel of ["h2", "h3", "a[class*='title']", ".poly-component__title"]) {
+            const el = card.querySelector(sel);
+            if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
+          }
+          const precoEl    = card.querySelector(".andes-money-amount__fraction, [class*='price-tag-fraction']");
+          const preco      = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
+          const linkEl     = card.querySelector("a");
+          const link       = linkEl ? linkEl.href : "";
+          const imgEl      = card.querySelector("img");
+          const imagem     = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
+          const descontoEl = card.querySelector("[class*='discount'], [class*='off']");
+          const desconto   = descontoEl ? descontoEl.textContent.trim() : "";
+          const avaliacao  = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
+          const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
+          const qtd_avaliacoes  = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
+          const vendidosEl      = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
+          const qtd_vendidos    = vendidosEl ? vendidosEl.textContent.trim() : "";
+          const maisVendidoEl   = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
+          const mais_vendido    = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
+          if (titulo && titulo.length > 3) {
+            items.push({ titulo, preco, desconto, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, link, imagem, posicao: index + 1 });
+          }
+        } catch (e) {}
+      });
+      return items;
+    });
+
+    await browser.close();
+    res.json({ status: "ok", total: produtos.length, data_extracao: new Date().toISOString(), produtos });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ROTA: OFERTAS POR CATEGORIA - MERCADO LIVRE
+// ============================================
+app.get("/ofertas/:categoria", async (req, res) => {
+  try {
+    const { categoria } = req.params;
+    const browser = await abrirBrowser();
+    const page    = await (await browser.newContext()).newPage();
+    await page.goto(`https://www.mercadolivre.com.br/ofertas?container_id=${categoria}`, { waitUntil: "networkidle", timeout: 30000 });
+
+    const produtos = await page.evaluate(() => {
+      const items = [];
+      const cards = document.querySelectorAll("div.poly-card, li.poly-component__item, div[class*='promotion-item']");
+      cards.forEach((card, index) => {
+        try {
+          const titulo     = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim() || "";
+          const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim() || "";
+          const preco      = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
+          const avaliacao  = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
+          const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
+          const qtd_avaliacoes  = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
+          const vendidosEl      = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
+          const qtd_vendidos    = vendidosEl ? vendidosEl.textContent.trim() : "";
+          const maisVendidoEl   = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
+          const mais_vendido    = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
+          const cupom  = card.querySelector("[class*='coupon'], [class*='coupon-tag'], [class*='promotion']")?.textContent?.trim() || "";
+          const link   = card.querySelector("a")?.href || "";
+          const imagem = card.querySelector("img")?.src || "";
+          if (titulo && link) items.push({ titulo, preco, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, cupom, link, imagem, posicao: index + 1 });
+        } catch (e) {}
+      });
+      return items;
+    });
+
+    await browser.close();
+    res.json({ status: "ok", categoria, total: produtos.length, produtos });
+  } catch (error) {
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
+// ROTA: BUGS DE PREÇO - MERCADO LIVRE
+// BUG CORRIGIDO: parseInt → parseFloat no preço; seletores mais robustos
+// ============================================
+app.get("/bugs", async (req, res) => {
+  try {
+    console.log("🔥 Buscando bugs ML...");
+    const browser = await abrirBrowser();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport:  { width: 1920, height: 1080 },
+      locale:    "pt-BR"
+    });
+    const page = await context.newPage();
+
+    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574&filter_applied=category&filter_position=4&origin=qcat", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    await page.waitForTimeout(5000);
+
+    // BUG CORRIGIDO: seletor ampliado para pegar mais cards (igual à rota /ofertas)
+    const items = await page.evaluate(() => {
+      const seletores = [".promotion-item", ".poly-card", "article", "div[class*='ui-search-result']", "li[class*='ui-search-layout__item']"];
+      let cards = [];
+      for (const sel of seletores) {
+        cards = Array.from(document.querySelectorAll(sel));
+        if (cards.length > 0) break;
+      }
+      return cards.map((card, index) => {
+        let titulo = "";
+        for (const sel of ["h2", "h3", "a[class*='title']", ".poly-component__title"]) {
+          const el = card.querySelector(sel);
+          if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
+        }
+        const precoEl  = card.querySelector(".andes-money-amount__fraction, [class*='price-tag-fraction']");
+        // BUG CORRIGIDO: era parseInt (perdia centavos), agora parseFloat
+        const preco    = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
+        const descontoEl = card.querySelector("[class*='discount'], [class*='off']");
+        const desconto   = descontoEl ? descontoEl.textContent.trim() : "";
+        const cupomEl    = card.querySelector("[class*='coupon'], [class*='promotion']");
+        const cupom      = cupomEl ? cupomEl.textContent.trim() : "";
+        const avaliacao  = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
+        const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
+        const qtd_avaliacoes  = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
+        const vendidosEl = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
+        const qtd_vendidos    = vendidosEl ? vendidosEl.textContent.trim() : "";
+        const maisVendidoEl   = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
+        const mais_vendido    = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
+        const link   = card.querySelector("a")?.href || "";
+        const imgEl  = card.querySelector("img");
+        const imagem = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
+        return { titulo, preco, desconto, cupom, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, link, imagem, posicao: index + 1 };
+      });
+    });
+
+    await browser.close();
+
+    const bugs = items.map(detectarBugML).filter(Boolean);
+
+    res.json({
+      status: "ok",
+      plataforma: "mercado_livre",
+      total_bugs: bugs.length,
+      data_extracao: new Date().toISOString(),
+      bugs
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
+
+// ============================================
 // ============================================
 // 🆕 ROTA: BUSCAR LOJAS ESPECÍFICAS SHEIN
 // ============================================
