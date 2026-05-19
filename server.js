@@ -510,6 +510,30 @@ app.get("/ofertas/:categoria", async (req, res) => {
       ofertas:
         "https://www.mercadolivre.com.br/ofertas"
 
+      decoracao:
+  "https://lista.mercadolivre.com.br/decoracao",
+
+casa:
+  "https://lista.mercadolivre.com.br/casa",
+
+moveis:
+  "https://lista.mercadolivre.com.br/moveis",
+
+utilidades:
+  "https://lista.mercadolivre.com.br/utilidades-domesticas",
+
+cozinha:
+  "https://lista.mercadolivre.com.br/cozinha",
+
+organizacao:
+  "https://lista.mercadolivre.com.br/organizacao",
+
+banheiro:
+  "https://lista.mercadolivre.com.br/banheiro",
+
+iluminacao:
+  "https://lista.mercadolivre.com.br/iluminacao",
+
     };
 
     const url =
