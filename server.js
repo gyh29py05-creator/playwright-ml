@@ -585,6 +585,9 @@ iluminacao:
     await page.mouse.wheel(0, 2000);
 
     await page.waitForTimeout(3000);
+    const html = await page.content();
+
+console.log(html);
 
     // =====================================
     // EXTRAÇÃO
