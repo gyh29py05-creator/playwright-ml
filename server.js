@@ -754,6 +754,12 @@ console.log(html);
           // =================================
           // SALVAR
           // =================================
+          console.log({
+  titulo,
+  preco,
+  link,
+  imagem
+});
           items.push({
 
             titulo,
