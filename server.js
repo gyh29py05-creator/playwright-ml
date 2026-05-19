@@ -478,11 +478,7 @@ app.get("/ofertas", async (req, res) => {
     const page = await context.newPage();
     await page.goto("https://www.mercadolivre.com.br/ofertas", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
-
+  
     const produtos = await page.evaluate(() => {
       const items = [];
       const seletores = ["article", "div[class*='ui-search-result']", "li[class*='ui-search-layout__item']", "div.poly-card", "div[class*='poly-component']", "li.poly-component__item", "div[class*='promotion-item']"];
@@ -560,18 +556,9 @@ app.get("/ofertas/:categoria", async (req, res) => {
 
     const produtos = await page.evaluate(() => {
       const items = [];
-      const seletores = [
-        "div.poly-card",
-        "li.poly-component__item",
-        "div[class*='ui-search-result']",
-        "li[class*='ui-search-layout__item']",
-        "article"
-      ];
-      let cards = [];
-      for (const sel of seletores) {
-        cards = Array.from(document.querySelectorAll(sel));
-        if (cards.length > 0) break;
-      }
+const cards = Array.from(
+  document.querySelectorAll("li.ui-search-layout__item")
+);
 
       cards.forEach((card, index) => {
         try {
