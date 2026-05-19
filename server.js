@@ -511,7 +511,7 @@ app.get("/ofertas/:categoria", async (req, res) => {
         "https://www.mercadolivre.com.br/ofertas",
 
       decoracao:
-  "https://lista.mercadolivre.com.br/decoracao",
+  "https://lista.mercadolivre.com.br/decoracao-sala",
 
 casa:
   "https://lista.mercadolivre.com.br/casa",
