@@ -551,13 +551,9 @@ app.get("/ofertas/:categoria", async (req, res) => {
     });
 
     // =====================================
-    // ESPERA CARREGAR
+    // ESPERA RENDERIZAR
     // =====================================
-    await page.waitForSelector("[class*='poly-card']", {
-
-      timeout: 15000
-
-    });
+    await page.waitForTimeout(5000);
 
     // =====================================
     // SIMULA USUÁRIO
@@ -574,137 +570,63 @@ app.get("/ofertas/:categoria", async (req, res) => {
       const items = [];
 
       // =====================================
-      // PEGA CARDS
+      // PEGA TODOS OS DIVS
       // =====================================
       const cards = Array.from(
-
-        document.querySelectorAll(
-          "[class*='poly-card']"
-        )
-
+        document.querySelectorAll("div")
       );
 
-      console.log("CARDS:", cards.length);
+      // =====================================
+      // FILTRA SOMENTE CARDS REAIS
+      // =====================================
+      const cardsFiltrados = cards.filter(card => {
+
+        return (
+
+          card.innerText &&
+          card.innerText.length > 30 &&
+
+          card.querySelector("img") &&
+          card.querySelector("a")
+
+        );
+
+      });
+
+      console.log("CARDS:", cardsFiltrados.length);
 
       // =====================================
       // LOOP DOS PRODUTOS
       // =====================================
-      cards.forEach((card, index) => {
+      cardsFiltrados.forEach((card, index) => {
 
         try {
 
           // =================================
-          // IGNORA CARD SEM TÍTULO
-          // =================================
-          if (
-            !card.querySelector(
-              ".poly-component__title"
-            )
-          ) {
-            return;
-          }
-
-          // =================================
           // TÍTULO
           // =================================
-          const tituloEl = card.querySelector(
-            ".poly-component__title"
-          );
+          const titulo =
 
-          const titulo = tituloEl
-            ? tituloEl.textContent.trim()
-            : "";
+            card.querySelector("h2, h3, a")
+              ?.innerText
+              ?.trim() || "";
 
           // =================================
           // PREÇO
           // =================================
-          const precoEl = card.querySelector(
-            ".andes-money-amount__fraction"
-          );
+          const precoTexto =
 
-          const preco = precoEl
-            ? parseFloat(
+            card.innerText.match(
+              /R\$\s?[\d\.]+\,?\d*/i
+            )?.[0] || "";
 
-                precoEl.textContent
-                  .trim()
-                  .replace(/[^\d,]/g, "")
-                  .replace(",", ".")
+          const preco = parseFloat(
 
-              )
-            : 0;
-
-          // =================================
-          // PREÇO ORIGINAL
-          // =================================
-          const precoOrigEl = card.querySelector(
-
-            "s .andes-money-amount__fraction, .andes-money-amount--previous .andes-money-amount__fraction"
-
-          );
-
-          const preco_original = precoOrigEl
-            ? parseFloat(
-
-                precoOrigEl.textContent
-                  .trim()
-                  .replace(/[^\d,]/g, "")
-                  .replace(",", ".")
-
-              )
-            : preco;
-
-          // =================================
-          // DESCONTO
-          // =================================
-          const desconto =
-
-            card.querySelector(
-              ".poly-price__disc_label, [class*='discount'], [class*='off']"
-            )?.textContent?.trim() || "";
-
-          // =================================
-          // PARCELAS
-          // =================================
-          const parcelas =
-
-            card.querySelector(
-              ".poly-price__installments, [class*='installment']"
-            )?.textContent?.trim() || "";
-
-          // =================================
-          // AVALIAÇÃO
-          // =================================
-          const avaliacao = parseFloat(
-
-            card.querySelector(
-              ".poly-reviews__rating, [class*='rating']"
-            )?.textContent?.trim()
+            precoTexto
+              .replace(/[^\d,]/g, "")
+              .replace(",", ".")
 
           ) || 0;
-
-          // =================================
-          // QUANTIDADE DE AVALIAÇÕES
-          // =================================
-          const qtd_avaliacoes =
-
-            card.querySelector(
-              ".poly-reviews__total, [class*='reviews__total']"
-            )?.textContent?.replace(/[^\d]/g, "") || "";
-
-          // =================================
-          // FRETE
-          // =================================
-          const freteEl = card.querySelector(
-
-            ".poly-component__shipping, [class*='shipping']"
-
-          );
-
-          const frete_gratis = freteEl
-            ? freteEl.textContent
-                .toLowerCase()
-                .includes("grátis")
-            : false;
 
           // =================================
           // LINK
@@ -726,19 +648,20 @@ app.get("/ofertas/:categoria", async (req, res) => {
             "";
 
           // =================================
-          // FILTROS
-          // =================================
-
-          // PREÇO MÍNIMO
-          if (preco < 20) return;
-
           // AVALIAÇÃO
-          if (
-            avaliacao > 0 &&
-            avaliacao < 4.0
-          ) {
-            return;
-          }
+          // =================================
+          const avaliacaoTexto =
+
+            card.innerText.match(
+              /\d\.\d/
+            )?.[0] || "0";
+
+          const avaliacao =
+            parseFloat(avaliacaoTexto) || 0;
+
+          // =================================
+          // FILTROS
+          // =====================================
 
           // TÍTULO
           if (
@@ -748,10 +671,24 @@ app.get("/ofertas/:categoria", async (req, res) => {
             return;
           }
 
+          // PREÇO
+          if (
+            !preco ||
+            preco < 20
+          ) {
+            return;
+          }
+
           // LINK
           if (
-            !link.includes("MLB") &&
             !link.includes("mercadolivre")
+          ) {
+            return;
+          }
+
+          // IMAGEM
+          if (
+            !imagem
           ) {
             return;
           }
@@ -767,7 +704,9 @@ app.get("/ofertas/:categoria", async (req, res) => {
             "conector",
             "adesivo",
             "refil",
-            "parafuso"
+            "parafuso",
+            "chip",
+            "suporte avulso"
 
           ];
 
@@ -792,12 +731,7 @@ app.get("/ofertas/:categoria", async (req, res) => {
 
             titulo,
             preco,
-            preco_original,
-            desconto,
-            parcelas,
             avaliacao,
-            qtd_avaliacoes,
-            frete_gratis,
             link,
             imagem,
             posicao: index + 1
@@ -877,53 +811,6 @@ app.get("/ofertas/:categoria", async (req, res) => {
 
   }
 
-});
-
-// ============================================
-// MERCADO LIVRE — DETECTAR BUGS DE PREÇO
-// ============================================
-app.get("/bugs", async (req, res) => {
-  try {
-    console.log("🔄 [ML] Detectando bugs de preço...");
-    const browser = await abrirBrowser();
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport:  { width: 1920, height: 1080 },
-      locale:    "pt-BR"
-    });
-    const page = await context.newPage();
-    await page.goto("https://www.mercadolivre.com.br/ofertas", { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(3000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
-
-    const todos = await page.evaluate(() => {
-      const items = [];
-      const cards = Array.from(document.querySelectorAll("article, div[class*='promotion-item'], div.poly-card, li.poly-component__item"));
-      cards.forEach((card, i) => {
-        try {
-          const titulo = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim() || "";
-          const precoTxt = card.querySelector(".andes-money-amount__fraction, [class*='price']")?.textContent?.trim() || "";
-          const preco = parseFloat(precoTxt.replace(/[^\d,]/g, "").replace(",", ".")) || 0;
-          const precoOrigEl = card.querySelector("s .andes-money-amount__fraction, .andes-money-amount--previous .andes-money-amount__fraction");
-          const preco_original = precoOrigEl ? parseFloat(precoOrigEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const desconto = card.querySelector("[class*='discount'], [class*='off']")?.textContent?.trim() || "";
-          const avaliacao = parseFloat(card.querySelector("[class*='rating']")?.textContent?.trim()) || 0;
-          const link = card.querySelector("a")?.href || "";
-          const imagem = card.querySelector("img")?.src || "";
-          if (titulo && preco > 0 && link) items.push({ titulo, preco, preco_original, desconto, avaliacao, link, imagem, posicao: i + 1 });
-        } catch (e) {}
-      });
-      return items;
-    });
-
-    await browser.close();
-    const bugs = todos.map(detectarBugML).filter(Boolean);
-    bugs.sort((a, b) => b.pontuacao - a.pontuacao);
-    res.json({ status: "ok", plataforma: "mercado_livre", total_analisados: todos.length, total_bugs: bugs.length, data_extracao: new Date().toISOString(), bugs });
-  } catch (error) {
-    res.status(500).json({ status: "erro", mensagem: error.message });
-  }
 });
 
 // ============================================
