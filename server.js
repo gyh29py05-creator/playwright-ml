@@ -443,190 +443,7 @@ function detectarBugShopee(item) {
   
   return { ...item, plataforma: "shopee", razoes_bug: razoes, pontuacao, classificacao: classificacao.nivel };
 }
-// ============================================
-// ROTA: OFERTAS DO DIA - MERCADO LIVRE
-// ============================================
-app.get("/ofertas", async (req, res) => {
-  try {
-    console.log("🔄 Buscando ofertas ML...");
-    const browser = await abrirBrowser();
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport:  { width: 1920, height: 1080 },
-      locale:    "pt-BR"
-    });
-    const page = await context.newPage();
-    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574#filter_applied=category&filter_position=4&origin=qcat", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000
-    });
-    await page.waitForTimeout(3000);
 
-    for (let i = 1; i <= 5; i++) {
-      await page.evaluate((step) => window.scrollTo(0, (document.body.scrollHeight / 5) * step), i);
-      await page.waitForTimeout(2000);
-    }
-
-    const produtos = await page.evaluate(() => {
-      const items = [];
-      const seletores = ["article", "div[class*='ui-search-result']", "li[class*='ui-search-layout__item']", "div.poly-card"];
-      let cards = [];
-      for (const sel of seletores) {
-        cards = Array.from(document.querySelectorAll(sel));
-        if (cards.length > 0) break;
-      }
-      cards.forEach((card, index) => {
-        try {
-          let titulo = "";
-          for (const sel of ["h2", "h3", "a[class*='title']", ".poly-component__title"]) {
-            const el = card.querySelector(sel);
-            if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
-          }
-          const precoEl    = card.querySelector(".andes-money-amount__fraction, [class*='price-tag-fraction']");
-          const preco      = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const linkEl     = card.querySelector("a");
-          const link       = linkEl ? linkEl.href : "";
-          const imgEl      = card.querySelector("img");
-          const imagem     = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
-          const descontoEl = card.querySelector("[class*='discount'], [class*='off']");
-          const desconto   = descontoEl ? descontoEl.textContent.trim() : "";
-          const avaliacao  = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
-          const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
-          const qtd_avaliacoes  = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
-          const vendidosEl      = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
-          const qtd_vendidos    = vendidosEl ? vendidosEl.textContent.trim() : "";
-          const maisVendidoEl   = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
-          const mais_vendido    = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
-          if (titulo && titulo.length > 3) {
-            items.push({ titulo, preco, desconto, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, link, imagem, posicao: index + 1 });
-          }
-        } catch (e) {}
-      });
-      return items;
-    });
-
-    await browser.close();
-    res.json({ status: "ok", total: produtos.length, data_extracao: new Date().toISOString(), produtos });
-  } catch (error) {
-    res.status(500).json({ status: "erro", mensagem: error.message });
-  }
-});
-
-// ============================================
-// ROTA: OFERTAS POR CATEGORIA - MERCADO LIVRE
-// ============================================
-app.get("/ofertas/:categoria", async (req, res) => {
-  try {
-    const { categoria } = req.params;
-    const browser = await abrirBrowser();
-    const page    = await (await browser.newContext()).newPage();
-    await page.goto(`https://www.mercadolivre.com.br/ofertas?container_id=${categoria}`, { waitUntil: "networkidle", timeout: 30000 });
-
-    const produtos = await page.evaluate(() => {
-      const items = [];
-      const cards = document.querySelectorAll("div.poly-card, li.poly-component__item, div[class*='promotion-item']");
-      cards.forEach((card, index) => {
-        try {
-          const titulo     = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim() || "";
-          const precoTexto = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim() || "";
-          const preco      = precoTexto ? parseFloat(precoTexto.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const avaliacao  = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
-          const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
-          const qtd_avaliacoes  = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
-          const vendidosEl      = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
-          const qtd_vendidos    = vendidosEl ? vendidosEl.textContent.trim() : "";
-          const maisVendidoEl   = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
-          const mais_vendido    = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
-          const cupom  = card.querySelector("[class*='coupon'], [class*='coupon-tag'], [class*='promotion']")?.textContent?.trim() || "";
-          const link   = card.querySelector("a")?.href || "";
-          const imagem = card.querySelector("img")?.src || "";
-          if (titulo && link) items.push({ titulo, preco, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, cupom, link, imagem, posicao: index + 1 });
-        } catch (e) {}
-      });
-      return items;
-    });
-
-    await browser.close();
-    res.json({ status: "ok", categoria, total: produtos.length, produtos });
-  } catch (error) {
-    res.status(500).json({ status: "erro", mensagem: error.message });
-  }
-});
-
-// ============================================
-// ROTA: BUGS DE PREÇO - MERCADO LIVRE
-// BUG CORRIGIDO: parseInt → parseFloat no preço; seletores mais robustos
-// ============================================
-app.get("/bugs", async (req, res) => {
-  try {
-    console.log("🔥 Buscando bugs ML...");
-    const browser = await abrirBrowser();
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport:  { width: 1920, height: 1080 },
-      locale:    "pt-BR"
-    });
-    const page = await context.newPage();
-
-    await page.goto("https://www.mercadolivre.com.br/ofertas?category=MLB1574&filter_applied=category&filter_position=4&origin=qcat", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000
-    });
-    await page.waitForTimeout(5000);
-
-    // BUG CORRIGIDO: seletor ampliado para pegar mais cards (igual à rota /ofertas)
-    const items = await page.evaluate(() => {
-      const seletores = [".promotion-item", ".poly-card", "article", "div[class*='ui-search-result']", "li[class*='ui-search-layout__item']"];
-      let cards = [];
-      for (const sel of seletores) {
-        cards = Array.from(document.querySelectorAll(sel));
-        if (cards.length > 0) break;
-      }
-      return cards.map((card, index) => {
-        let titulo = "";
-        for (const sel of ["h2", "h3", "a[class*='title']", ".poly-component__title"]) {
-          const el = card.querySelector(sel);
-          if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
-        }
-        const precoEl  = card.querySelector(".andes-money-amount__fraction, [class*='price-tag-fraction']");
-        // BUG CORRIGIDO: era parseInt (perdia centavos), agora parseFloat
-        const preco    = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-        const descontoEl = card.querySelector("[class*='discount'], [class*='off']");
-        const desconto   = descontoEl ? descontoEl.textContent.trim() : "";
-        const cupomEl    = card.querySelector("[class*='coupon'], [class*='promotion']");
-        const cupom      = cupomEl ? cupomEl.textContent.trim() : "";
-        const avaliacao  = card.querySelector(".poly-reviews__rating, [class*='reviews__rating']")?.textContent?.trim() || "";
-        const qtdAvaliacoesEl = card.querySelector(".poly-reviews__total, [class*='reviews__total']");
-        const qtd_avaliacoes  = qtdAvaliacoesEl ? qtdAvaliacoesEl.textContent.replace(/[()]/g, "").trim() : "";
-        const vendidosEl = card.querySelector("[class*='sold-quantity'], .poly-component__sold-quantity, [class*='sales']");
-        const qtd_vendidos    = vendidosEl ? vendidosEl.textContent.trim() : "";
-        const maisVendidoEl   = card.querySelector("[class*='highlight'], .poly-component__highlight, [class*='best-seller'], [class*='tag']");
-        const mais_vendido    = maisVendidoEl ? maisVendidoEl.textContent.trim() : "";
-        const link   = card.querySelector("a")?.href || "";
-        const imgEl  = card.querySelector("img");
-        const imagem = imgEl ? (imgEl.src || imgEl.getAttribute("data-src") || "") : "";
-        return { titulo, preco, desconto, cupom, avaliacao, qtd_avaliacoes, qtd_vendidos, mais_vendido, link, imagem, posicao: index + 1 };
-      });
-    });
-
-    await browser.close();
-
-    const bugs = items.map(detectarBugML).filter(Boolean);
-
-    res.json({
-      status: "ok",
-      plataforma: "mercado_livre",
-      total_bugs: bugs.length,
-      data_extracao: new Date().toISOString(),
-      bugs
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ status: "erro", mensagem: error.message });
-  }
-});
-
-// ============================================
 // ============================================
 // 🆕 ROTA: BUSCAR LOJAS ESPECÍFICAS SHEIN
 // ============================================
@@ -882,6 +699,336 @@ app.get("/", (req, res) => {
     lojas_exclusivas_shein: Object.keys(SHEIN_LOJAS_EXCLUSIVAS)
   });
 });
+// ============================================
+// 🚨 SISTEMA DE ALERTAS DE BUGS - URGÊNCIA MÁXIMA
+// Templates especiais para bugs de preço
+// ============================================
+
+const PLATFORM_STYLES = {
+  amazon: {
+    emoji: "🔵",
+    nome: "AMAZON",
+    cor_urgencia: "🔵⚡"
+  },
+  mercado_livre: {
+    emoji: "💛",
+    nome: "MERCADO LIVRE",
+    cor_urgencia: "💛⚡"
+  },
+  shopee: {
+    emoji: "🧡",
+    nome: "SHOPEE",
+    cor_urgencia: "🧡⚡"
+  },
+  shein: {
+    emoji: "⚫",
+    nome: "SHEIN",
+    cor_urgencia: "⚫⚡"
+  }
+};
+
+// ============================================
+// 🔥 FUNÇÃO: GERAR ALERTA DE BUG CRÍTICO
+// ============================================
+function gerarAlertaBugCritico(produto, plataforma) {
+  const style = PLATFORM_STYLES[plataforma] || PLATFORM_STYLES.amazon;
+  
+  let mensagem = `
+🚨🚨🚨 *ALERTA DE BUG* 🚨🚨🚨
+${style.cor_urgencia} *${style.nome}* ${style.cor_urgencia}
+
+⚠️ *ATENÇÃO: ERRO DE PREÇO DETECTADO!*
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *PRODUTO:*
+${produto.titulo}
+
+💰 *PREÇO COM BUG:*
+`;
+
+  // Adicionar preço com destaque
+  if (produto.preco_original && produto.preco_original > 0) {
+    const economia = (produto.preco_original - produto.preco).toFixed(2);
+    mensagem += `~R$ ${produto.preco_original}~ → *R$ ${produto.preco}*\n`;
+    mensagem += `💎 *ECONOMIA: R$ ${economia}*\n`;
+    if (produto.desconto) {
+      mensagem += `🔥 *${produto.desconto}% OFF*\n`;
+    }
+  } else {
+    mensagem += `*R$ ${produto.preco}* ⚡\n`;
+  }
+
+  mensagem += `\n`;
+
+  // Razões do bug (se houver)
+  if (produto.razoes_bug && produto.razoes_bug.length > 0) {
+    mensagem += `❗ *POR QUE É BUG:*\n`;
+    produto.razoes_bug.forEach((razao, index) => {
+      mensagem += `${index + 1}. ${razao}\n`;
+    });
+    mensagem += `\n`;
+  }
+
+  // Avaliações (se houver)
+  if (produto.avaliacao) {
+    const estrelas = "⭐".repeat(Math.floor(produto.avaliacao));
+    mensagem += `${estrelas} *${produto.avaliacao}/5*`;
+    if (produto.qtd_avaliacoes) {
+      mensagem += ` (${produto.qtd_avaliacoes} avaliações)`;
+    }
+    mensagem += `\n\n`;
+  }
+
+  // URGÊNCIA MÁXIMA
+  mensagem += `⏰ *COMPRE IMEDIATAMENTE!*\n`;
+  mensagem += `⚡ *BUG PODE SER CORRIGIDO A QUALQUER MOMENTO!*\n\n`;
+
+  mensagem += `🛒 *LINK DIRETO:*\n`;
+  mensagem += `👉 ${produto.link}\n\n`;
+
+  // Instruções de urgência
+  mensagem += `🎯 *COMO COMPRAR RÁPIDO:*\n`;
+  mensagem += `1️⃣ Clique no link agora\n`;
+  mensagem += `2️⃣ Adicione ao carrinho\n`;
+  mensagem += `3️⃣ Finalize RÁPIDO antes que corrijam\n\n`;
+
+  mensagem += `⚠️ *NÃO PERCA TEMPO!*\n`;
+  mensagem += `⚠️ *ESTOQUE PODE ACABAR A QUALQUER SEGUNDO!*\n\n`;
+
+  mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  mensagem += `#BugDePreço #Urgente #CompraAgora\n`;
+  mensagem += `${style.emoji} #${style.nome.replace(' ', '')}`;
+
+  return mensagem;
+}
+
+// ============================================
+// ⚡ FUNÇÃO: ALERTA RELÂMPAGO (mais curto)
+// Para enviar no Stories/Status do WhatsApp
+// ============================================
+function gerarAlertaRelampago(produto, plataforma) {
+  const style = PLATFORM_STYLES[plataforma] || PLATFORM_STYLES.amazon;
+  
+  return `
+🚨 *BUG DE PREÇO!* 🚨
+
+${produto.titulo.substring(0, 50)}...
+
+💰 *R$ ${produto.preco}*
+${produto.desconto ? `🔥 ${produto.desconto}% OFF` : ''}
+
+⚡ *CORRE! PODE ACABAR!*
+
+👉 ${produto.link}
+
+${style.emoji} #BugDePreço
+`;
+}
+
+// ============================================
+// 🎯 FUNÇÃO: RANKING DE BUGS (Top 5)
+// Para mostrar os melhores bugs encontrados
+// ============================================
+function gerarRankingBugs(bugs, plataforma) {
+  const style = PLATFORM_STYLES[plataforma] || PLATFORM_STYLES.amazon;
+  
+  // Ordenar por economia (maior desconto primeiro)
+  const bugsOrdenados = bugs.sort((a, b) => {
+    const descontoA = parseFloat((a.desconto || "0").toString().replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+    const descontoB = parseFloat((b.desconto || "0").toString().replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+    return descontoB - descontoA;
+  }).slice(0, 5);
+
+  let mensagem = `
+${style.cor_urgencia}${style.cor_urgencia}${style.cor_urgencia}
+
+🏆 *TOP 5 BUGS DE PREÇO*
+${style.emoji} *${style.nome}* ${style.emoji}
+
+⚡ *ATUALIZADO AGORA* ⚡
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+`;
+
+  bugsOrdenados.forEach((bug, index) => {
+    const medalha = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][index];
+    
+    mensagem += `${medalha} *#${index + 1}*\n`;
+    mensagem += `${bug.titulo.substring(0, 40)}...\n`;
+    mensagem += `💰 *R$ ${bug.preco}*`;
+    
+    if (bug.desconto) {
+      mensagem += ` (${bug.desconto}% OFF)`;
+    }
+    
+    if (bug.avaliacao) {
+      const estrelas = "⭐".repeat(Math.floor(bug.avaliacao));
+      mensagem += `\n${estrelas} ${bug.avaliacao}/5`;
+    }
+    
+    mensagem += `\n👉 ${bug.link}\n\n`;
+  });
+
+  mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  mensagem += `⚠️ *BUGS PODEM SUMIR A QUALQUER MOMENTO!*\n`;
+  mensagem += `⚡ *COMPRE RÁPIDO!*\n\n`;
+  mensagem += `#TopBugs #Urgente #Oportunidade`;
+
+  return mensagem;
+}
+
+// ============================================
+// 🎨 FUNÇÃO: CARD VISUAL DE BUG (com emojis)
+// ============================================
+function gerarCardVisualBug(produto, plataforma) {
+  const style = PLATFORM_STYLES[plataforma] || PLATFORM_STYLES.amazon;
+  
+  let mensagem = `
+┏━━━━━━━━━━━━━━━━━━━━━━┓
+┃  🚨 *ALERTA DE BUG* 🚨  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━┛
+
+${style.emoji} *${style.nome}*
+
+📦 ${produto.titulo}
+
+┌─────────────────────┐
+│  💰 *PREÇO COM BUG:*  │
+`;
+
+  if (produto.preco_original) {
+    mensagem += `│  ~R$ ${produto.preco_original}~  →  *R$ ${produto.preco}*  │\n`;
+  } else {
+    mensagem += `│  *R$ ${produto.preco}*  │\n`;
+  }
+
+  mensagem += `└─────────────────────┘\n\n`;
+
+  if (produto.desconto) {
+    mensagem += `🔥 *DESCONTO: ${produto.desconto}%*\n\n`;
+  }
+
+  if (produto.avaliacao) {
+    const estrelas = "⭐".repeat(Math.floor(produto.avaliacao));
+    mensagem += `${estrelas} ${produto.avaliacao}/5\n`;
+    if (produto.qtd_avaliacoes) {
+      mensagem += `👥 ${produto.qtd_avaliacoes} avaliações\n`;
+    }
+    mensagem += `\n`;
+  }
+
+  mensagem += `┏━━━━━━━━━━━━━━━━━━━━┓\n`;
+  mensagem += `┃  ⚡ *COMPRE AGORA!* ⚡  ┃\n`;
+  mensagem += `┗━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+
+  mensagem += `🛒 ${produto.link}\n\n`;
+
+  mensagem += `⚠️ *Pode acabar a qualquer momento!*\n`;
+  mensagem += `#BugDePreço #${style.nome.replace(' ', '')}`;
+
+  return mensagem;
+}
+
+// ============================================
+// 📢 FUNÇÃO: ALERTA COM CONTADOR REGRESSIVO
+// (simulado - para criar senso de urgência)
+// ============================================
+function gerarAlertaComContador(produto, plataforma, minutosRestantes = 30) {
+  const style = PLATFORM_STYLES[plataforma] || PLATFORM_STYLES.amazon;
+  
+  return `
+⏰⏰⏰ *ALERTA URGENTE* ⏰⏰⏰
+
+${style.cor_urgencia} ${style.nome} ${style.cor_urgencia}
+
+🚨 *BUG DE PREÇO DETECTADO!*
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📦 ${produto.titulo}
+
+💰 *R$ ${produto.preco}*
+${produto.desconto ? `🔥 ${produto.desconto}% OFF` : ''}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+⏰ *TEMPO ESTIMADO: ${minutosRestantes} MINUTOS*
+
+⚠️ Bug pode ser corrigido a qualquer momento!
+
+🏃‍♀️ *CORRE QUE É BUG!*
+
+👉 ${produto.link}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ *NÃO PERCA ESSA!*
+
+#BugUrgente #CompraAgora #${style.nome.replace(' ', '')}
+`;
+}
+
+// ============================================
+// 🎯 EXPORTAR FUNÇÕES
+// ============================================
+module.exports = {
+  gerarAlertaBugCritico,
+  gerarAlertaRelampago,
+  gerarRankingBugs,
+  gerarCardVisualBug,
+  gerarAlertaComContador
+};
+
+// ============================================
+// 📋 EXEMPLOS DE USO
+// ============================================
+
+/*
+EXEMPLO 1 - Alerta Crítico:
+const produto = {
+  titulo: "iPhone 13 128GB",
+  preco: 1899.99,
+  preco_original: 3499.99,
+  desconto: "46",
+  avaliacao: 4.8,
+  qtd_avaliacoes: "1.234",
+  link: "https://...",
+  razoes_bug: [
+    "iPhone por R$1899.99 (suspeito abaixo de R$2.000)",
+    "Desconto de 46% acima do normal"
+  ]
+};
+
+const mensagem = gerarAlertaBugCritico(produto, "amazon");
+console.log(mensagem);
+
+---
+
+EXEMPLO 2 - Alerta Relâmpago (Status):
+const mensagem = gerarAlertaRelampago(produto, "mercado_livre");
+// Enviar no status/stories do WhatsApp
+
+---
+
+EXEMPLO 3 - Ranking de Bugs:
+const bugs = [bug1, bug2, bug3, bug4, bug5];
+const ranking = gerarRankingBugs(bugs, "shopee");
+// Enviar no grupo principal
+
+---
+
+EXEMPLO 4 - Card Visual:
+const card = gerarCardVisualBug(produto, "shein");
+// Enviar com imagem do produto
+
+---
+
+EXEMPLO 5 - Com Contador:
+const alerta = gerarAlertaComContador(produto, "amazon", 15);
+// 15 minutos de "urgência estimada"
+*/
 
 // ============================================
 // INICIAR SERVIDOR
