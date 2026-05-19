@@ -531,44 +531,137 @@ app.get("/ofertas", async (req, res) => {
 app.get("/ofertas/:categoria", async (req, res) => {
   try {
     const { categoria } = req.params;
-    console.log(`🔄 [ML] Buscando categoria: ${categoria}`);
+
+    // URLs por categoria
+    const urlsPorCategoria = {
+      beleza:      "https://lista.mercadolivre.com.br/beleza-cuidado-pessoal",
+      moda:        "https://lista.mercadolivre.com.br/moda-acessorios",
+      suplementos: "https://lista.mercadolivre.com.br/suplementos-proteinas",
+      casa:        "https://lista.mercadolivre.com.br/casa-moveis-decoracao",
+      ofertas:     "https://www.mercadolivre.com.br/ofertas"
+    };
+
+    const url = urlsPorCategoria[categoria] || urlsPorCategoria["ofertas"];
+    console.log(`🔄 [ML] Buscando categoria: ${categoria} → ${url}`);
+
     const browser = await abrirBrowser();
-    const page = await browser.newPage();
-    await page.goto(`https://www.mercadolivre.com.br/ofertas?container_id=${categoria}`, { waitUntil: "networkidle", timeout: 30000 });
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: { width: 1920, height: 1080 },
+      locale: "pt-BR"
+    });
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(3000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(2000);
 
     const produtos = await page.evaluate(() => {
       const items = [];
-      const seletores = ["div.poly-card", "li.poly-component__item", "div[class*='promotion-item']", "a.poly-component__link"];
+      const seletores = [
+        "div.poly-card",
+        "li.poly-component__item",
+        "div[class*='ui-search-result']",
+        "li[class*='ui-search-layout__item']",
+        "article"
+      ];
       let cards = [];
-      for (const sel of seletores) { cards = Array.from(document.querySelectorAll(sel)); if (cards.length > 0) break; }
+      for (const sel of seletores) {
+        cards = Array.from(document.querySelectorAll(sel));
+        if (cards.length > 0) break;
+      }
+
       cards.forEach((card, index) => {
         try {
-          const titulo    = card.querySelector("h2, h3, [class*='title']")?.textContent?.trim() || "";
-          const precoTxt  = card.querySelector("[class*='price'], .andes-money-amount__fraction")?.textContent?.trim() || "";
-          const preco     = precoTxt ? parseFloat(precoTxt.replace(/[^\d,]/g, "").replace(",", ".")) : 0;
-          const linkEl    = card.querySelector("a") || card;
-          const link      = linkEl?.href || linkEl?.getAttribute("href") || "";
-          const imagem    = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
-          const desconto  = card.querySelector("[class*='discount'], [class*='off']")?.textContent?.trim() || "";
-          const parcelas  = card.querySelector("[class*='installment'], [class*='parcela']")?.textContent?.trim() || "";
-          const avaliacao = parseFloat(card.querySelector("[class*='rating']")?.textContent?.trim()) || 0;
-          const freteEl   = card.querySelector("[class*='shipping'], [class*='frete']");
-          const frete_gratis = freteEl ? freteEl.textContent.toLowerCase().includes("grátis") : false;
-          if (titulo && link && link.includes("mercadolivre.com")) {
-            items.push({ titulo, preco, desconto, parcelas, avaliacao, frete_gratis, link, imagem, posicao: index + 1 });
+          // TÍTULO
+          const tituloSels = ["h2", "h3", ".poly-component__title", "[class*='ui-search-item__title']"];
+          let titulo = "";
+          for (const sel of tituloSels) {
+            const el = card.querySelector(sel);
+            if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
           }
-        } catch (e) {}
+
+          // PREÇO
+          const precoEl = card.querySelector(".andes-money-amount__fraction");
+          const preco = precoEl ? parseFloat(precoEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : 0;
+
+          // PREÇO ORIGINAL
+          const precoOrigEl = card.querySelector("s .andes-money-amount__fraction, .andes-money-amount--previous .andes-money-amount__fraction");
+          const preco_original = precoOrigEl ? parseFloat(precoOrigEl.textContent.trim().replace(/[^\d,]/g, "").replace(",", ".")) : preco;
+
+          // DESCONTO
+          const desconto = card.querySelector(".poly-price__disc_label, [class*='discount'], [class*='off']")?.textContent?.trim() || "";
+
+          // PARCELAS
+          const parcelas = card.querySelector(".poly-price__installments, [class*='installment']")?.textContent?.trim() || "";
+
+          // AVALIAÇÃO
+          const avaliacao = parseFloat(card.querySelector(".poly-reviews__rating, [class*='rating']")?.textContent?.trim()) || 0;
+
+          // QTD AVALIAÇÕES
+          const qtd_avaliacoes = card.querySelector(".poly-reviews__total, [class*='reviews__total']")?.textContent?.replace(/[^\d]/g, "") || "";
+
+          // FRETE
+          const freteEl = card.querySelector(".poly-component__shipping, [class*='shipping']");
+          const frete_gratis = freteEl ? freteEl.textContent.toLowerCase().includes("grátis") : false;
+
+          // LINK
+          const link = card.querySelector("a")?.href || "";
+
+          // IMAGEM
+          const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
+
+          // FILTRO DE QUALIDADE
+          if (preco < 20) return;
+          if (avaliacao > 0 && avaliacao < 4.0) return;
+          if (!link.includes("MLB") && !link.includes("mercadolivre")) return;
+          if (!titulo || titulo.length < 5) return;
+
+          items.push({
+            titulo,
+            preco,
+            preco_original,
+            desconto,
+            parcelas,
+            avaliacao,
+            qtd_avaliacoes,
+            frete_gratis,
+            link,
+            imagem,
+            posicao: index + 1
+          });
+        } catch (e) {
+          console.error(`Erro no card ${index}:`, e.message);
+        }
       });
-      return items;
+
+      // REMOVE DUPLICATAS por ID do produto
+      const vistos = new Set();
+      return items.filter(p => {
+        const id = p.link.match(/MLB\d+/)?.[0];
+        if (!id || vistos.has(id)) return false;
+        vistos.add(id);
+        return true;
+      });
     });
 
     await browser.close();
-    res.json({ status: "ok", categoria, total: produtos.length, data_extracao: new Date().toISOString(), produtos });
+    console.log(`✅ [ML] ${produtos.length} produtos extraídos em: ${categoria}`);
+    res.json({
+      status: "ok",
+      categoria,
+      total: produtos.length,
+      data_extracao: new Date().toISOString(),
+      produtos
+    });
+
   } catch (error) {
+    console.error("❌ [ML] Erro:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
-
 // ============================================
 // MERCADO LIVRE — DETECTAR BUGS DE PREÇO
 // ============================================
