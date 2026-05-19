@@ -557,18 +557,21 @@ app.get("/ofertas/:categoria", async (req, res) => {
     const produtos = await page.evaluate(() => {
       const items = [];
 const cards = Array.from(
-  document.querySelectorAll("li.ui-search-layout__item")
+ document.querySelectorAll("div.poly-card")
+);
+   cards.forEach((card, index) => {
+
+  if (!card.querySelector(".poly-component__title")) return;
+
+  try {
+          // TÍTULO
+        const tituloEl = card.querySelector(
+ ".poly-component__title"
 );
 
-      cards.forEach((card, index) => {
-        try {
-          // TÍTULO
-          const tituloSels = ["h2", "h3", ".poly-component__title", "[class*='ui-search-item__title']"];
-          let titulo = "";
-          for (const sel of tituloSels) {
-            const el = card.querySelector(sel);
-            if (el && el.textContent.trim()) { titulo = el.textContent.trim(); break; }
-          }
+const titulo = tituloEl
+ ? tituloEl.textContent.trim()
+ : "";
 
           // PREÇO
           const precoEl = card.querySelector(".andes-money-amount__fraction");
@@ -595,11 +598,13 @@ const cards = Array.from(
           const frete_gratis = freteEl ? freteEl.textContent.toLowerCase().includes("grátis") : false;
 
           // LINK
-          const link = card.querySelector("a")?.href || "";
+    const link = card.querySelector("a.poly-component__title")?.href || "";
 
           // IMAGEM
-          const imagem = card.querySelector("img")?.src || card.querySelector("img")?.getAttribute("data-src") || "";
-
+        const imagem =
+ card.querySelector("img")?.src ||
+ card.querySelector("img")?.getAttribute("data-src") ||
+ "";
           // FILTRO DE QUALIDADE
           if (preco < 20) return;
           if (avaliacao > 0 && avaliacao < 4.0) return;
@@ -607,6 +612,21 @@ const cards = Array.from(
           if (!titulo || titulo.length < 5) return;
 
           items.push({
+            const blacklist = [
+ "película",
+ "cabo",
+ "adaptador",
+ "conector",
+ "adesivo",
+ "refil",
+ "parafuso"
+];
+
+if (
+ blacklist.some(p =>
+   titulo.toLowerCase().includes(p)
+ )
+) return;
             titulo,
             preco,
             preco_original,
