@@ -508,7 +508,7 @@ app.get("/ofertas/:categoria", async (req, res) => {
         "https://lista.mercadolivre.com.br/eletronicos",
 
       ofertas:
-        "https://www.mercadolivre.com.br/ofertas"
+        "https://www.mercadolivre.com.br/ofertas",
 
       decoracao:
   "https://lista.mercadolivre.com.br/decoracao",
