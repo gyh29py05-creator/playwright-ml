@@ -1546,75 +1546,67 @@ app.post("/tiktok/seguir", async (req, res) => {
 });
 
 // ============================================
-// ROTA MELHORADA - EXTRATOR FORTE 2026
+// ROTA OFERTAS INTELIGENTES - VERSÃO 3 (BUSCA REAL)
 // ============================================
 app.get("/ofertas-inteligentes", async (req, res) => {
   try {
-    const { categoria = "decoracao", limite = 12, min_pontos = 50 } = req.query;
+    const { categoria = "decoracao", limite = 12, min_pontos = 45 } = req.query;
     
-    console.log(`🔍 Buscando: ${categoria} | min_pontos: ${min_pontos}`);
+    console.log(`🔍 Buscando categoria: ${categoria}`);
 
     const browser = await abrirBrowser();
     const context = await browser.newContext({ 
       locale: "pt-BR",
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+      viewport: { width: 1920, height: 1080 }
     });
     const page = await context.newPage();
 
-    const url = `https://www.mercadolivre.com.br/ofertas?q=${encodeURIComponent(categoria)}`;
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 80000 });
-    await page.waitForTimeout(5000);
+    // Busca normal (mais produtos bons)
+    const url = `https://lista.mercadolivre.com.br/${encodeURIComponent(categoria)}`;
+    console.log(`🌐 Acessando: ${url}`);
+    
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForTimeout(6000);
 
     // Scroll forte
-    for (let i = 0; i < 8; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1000));
-      await page.waitForTimeout(1500);
+    for (let i = 0; i < 10; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1200));
+      await page.waitForTimeout(1400);
     }
 
     const produtosRaw = await page.evaluate(() => {
       const items = [];
-      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card, article[data-testid]');
+      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card');
 
       cards.forEach((card, index) => {
         try {
           // Título
-          let titulo = "";
           const tituloEl = card.querySelector('h2, .poly-component__title, .ui-search-item__title');
-          if (tituloEl) titulo = tituloEl.textContent.trim();
+          const titulo = tituloEl ? tituloEl.textContent.trim() : "";
 
-          // Preço - Vários seletores possíveis
+          // Preço (melhorado)
           let preco = 0;
-          const priceSelectors = [
-            '.andes-money-amount__fraction',
-            '.price-tag-fraction',
-            '.poly-price__current .andes-money-amount__fraction',
-            '[class*="price"] .andes-money-amount__fraction',
-            '.andes-money-amount'
-          ];
-
-          for (const selector of priceSelectors) {
-            const els = card.querySelectorAll(selector);
-            for (const el of els) {
-              const texto = el.textContent.replace(/[^\d,]/g, '').replace(',', '.');
-              const valor = parseFloat(texto);
-              if (valor > 20) {
-                preco = valor;
-                break;
-              }
+          const priceEls = card.querySelectorAll('.andes-money-amount__fraction, .price-tag-fraction, .poly-price__current');
+          for (const el of priceEls) {
+            const texto = el.textContent.replace(/[^\d,]/g, '').replace(',', '.');
+            const valor = parseFloat(texto);
+            if (valor > 25) {
+              preco = valor;
+              break;
             }
-            if (preco > 20) break;
           }
 
           // Link
-          const linkEl = card.querySelector('a[href*="/"]');
+          const linkEl = card.querySelector('a');
           let link = linkEl ? linkEl.href : "";
           if (link && !link.startsWith("http")) link = "https://www.mercadolivre.com.br" + link;
 
           // Imagem
           const img = card.querySelector('img');
-          const imagem = img ? (img.src || img.getAttribute('data-src') || img.getAttribute('srcset') || "") : "";
+          const imagem = img ? (img.src || img.getAttribute('data-src') || "") : "";
 
-          if (titulo.length > 10 && preco > 30 && link) {
+          if (titulo.length > 15 && preco > 25 && link) {
             items.push({
               titulo: titulo.substring(0, 130),
               preco,
@@ -1665,7 +1657,6 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
-
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
