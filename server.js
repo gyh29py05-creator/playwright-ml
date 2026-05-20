@@ -1545,56 +1545,75 @@ app.post("/tiktok/seguir", async (req, res) => {
   }
 });
 // ============================================
-// NOVA ROTA: OFERTAS INTELIGENTES (A MELHOR PARA VOCÊ)
+// ROTA CORRIGIDA - OFERTAS INTELIGENTES (MELHORADA)
 // ============================================
 app.get("/ofertas-inteligentes", async (req, res) => {
   try {
-    const { categoria = "decoracao", limite = 12, min_pontos = 65 } = req.query;
+    const { categoria = "decoracao", limite = 12, min_pontos = 60 } = req.query;
     
     console.log(`🔍 Buscando ofertas inteligentes - Categoria: ${categoria} | Mínimo ${min_pontos} pontos`);
 
     const browser = await abrirBrowser();
     const context = await browser.newContext({ 
       locale: "pt-BR",
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
     });
     const page = await context.newPage();
 
-    // Vai para ofertas do Mercado Livre
-    let url = `https://www.mercadolivre.com.br/ofertas?q=${encodeURIComponent(categoria)}`;
+    const url = `https://www.mercadolivre.com.br/ofertas?q=${encodeURIComponent(categoria)}`;
+    console.log(`🌐 Acessando: ${url}`);
+    
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(4000);
 
-    // Rola a página para carregar mais produtos
-    for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await page.waitForTimeout(1500);
+    // Rola a página várias vezes
+    for (let i = 0; i < 6; i++) {
+      await page.evaluate(() => window.scrollBy(0, 800));
+      await page.waitForTimeout(1200);
     }
 
-    // Extrai os produtos
+    // === NOVO EXTRATOR MAIS FORTE ===
     const produtosRaw = await page.evaluate(() => {
       const items = [];
-      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card');
+      // Seletores atualizados do Mercado Livre 2026
+      const cards = document.querySelectorAll('li.ui-search-layout__item, div[class*="andes-card"], article');
 
       cards.forEach((card, index) => {
         try {
-          const tituloEl = card.querySelector('h2, .ui-search-item__title') || card.querySelector('a');
+          // Título
+          const tituloEl = card.querySelector('h2, .poly-component__title, a[href*="/"]');
           const titulo = tituloEl ? tituloEl.textContent.trim() : "";
 
-          const precoEl = card.querySelector('.price-tag-amount, .andes-money-amount__fraction');
+          // Preço (vários formatos possíveis)
           let preco = 0;
-          if (precoEl) {
-            preco = parseFloat(precoEl.textContent.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+          const precoSelectors = [
+            '.price-tag-amount .andes-money-amount__fraction',
+            '.poly-price__current .andes-money-amount__fraction',
+            '.andes-money-amount__fraction',
+            '[class*="price"] .andes-money-amount'
+          ];
+          
+          for (const sel of precoSelectors) {
+            const el = card.querySelector(sel);
+            if (el) {
+              const textoPreco = el.textContent.replace(/[^\d,]/g, '').replace(',', '.');
+              preco = parseFloat(textoPreco) || 0;
+              if (preco > 10) break;
+            }
           }
 
-          const linkEl = card.querySelector('a');
+          // Link
+          const linkEl = card.querySelector('a[href*="/"]');
           let link = linkEl ? linkEl.href : "";
           if (link && !link.startsWith("http")) link = "https://www.mercadolivre.com.br" + link;
 
-          const imagem = card.querySelector('img')?.src || "";
+          // Imagem
+          const imgEl = card.querySelector('img');
+          const imagem = imgEl ? (imgEl.src || imgEl.getAttribute('data-src') || "") : "";
 
-          if (titulo && preco > 0 && link) {
+          if (titulo && preco > 30 && link) {
             items.push({ 
-              titulo, 
+              titulo: titulo.substring(0, 120), 
               preco, 
               link, 
               imagem,
@@ -1608,7 +1627,9 @@ app.get("/ofertas-inteligentes", async (req, res) => {
 
     await browser.close();
 
-    // === APLICA FILTRO DE QUALIDADE ===
+    console.log(`📦 Produtos extraídos: ${produtosRaw.length}`);
+
+    // === FILTRO DE QUALIDADE ===
     const analisados = produtosRaw.map(p => {
       const pontuacao = calcularPontuacaoProduto(p);
       const classif = classificarProduto(pontuacao);
@@ -1620,13 +1641,12 @@ app.get("/ofertas-inteligentes", async (req, res) => {
       };
     });
 
-    // Filtra só os bons
     const qualificados = analisados
       .filter(p => p.pontuacao >= parseInt(min_pontos))
       .sort((a, b) => b.pontuacao - a.pontuacao)
       .slice(0, parseInt(limite));
 
-    console.log(`✅ Encontrados ${qualificados.length} produtos bons`);
+    console.log(`✅ Produtos bons encontrados: ${qualificados.length}`);
 
     res.json({
       status: "ok",
@@ -1638,11 +1658,10 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Erro na rota ofertas-inteligentes:", error.message);
+    console.error("❌ Erro na rota ofertas-inteligentes:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
-
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
