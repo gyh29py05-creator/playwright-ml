@@ -1546,13 +1546,11 @@ app.post("/tiktok/seguir", async (req, res) => {
 });
 
 // ============================================
-// ROTA COM DEBUG (para vermos o que está acontecendo)
+// ROTA SIMPLES - DECORAÇÃO (TESTE FINAL)
 // ============================================
 app.get("/ofertas-inteligentes", async (req, res) => {
   try {
-    const { categoria = "decoracao", limite = 10, min_pontos = 40 } = req.query;
-
-    console.log(`🔄 Iniciando busca para: ${categoria}`);
+    console.log("🔄 Iniciando scraper simples de decoração...");
 
     const browser = await abrirBrowser();
     const context = await browser.newContext({
@@ -1561,57 +1559,44 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     });
     const page = await context.newPage();
 
-    const url = `https://lista.mercadolivre.com.br/${encodeURIComponent(categoria)}`;
-    console.log(`🌐 Acessando URL: ${url}`);
+    // Página mais estável para decoração
+    await page.goto("https://lista.mercadolivre.com.br/decoracao-sala_OrderId_PRICE*DESC", 
+      { waitUntil: "domcontentloaded", timeout: 90000 });
 
-    await page.goto(url, { waitUntil: "networkidle", timeout: 90000 });
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(10000); // Espera mais tempo
 
-    console.log("📜 Fazendo scroll...");
-
+    // Scroll
     for (let i = 0; i < 8; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1200));
+      await page.evaluate(() => window.scrollBy(0, 1500));
       await page.waitForTimeout(2000);
     }
 
-    // === DEBUG: Ver o que o Playwright está vendo ===
-    const htmlLength = await page.evaluate(() => document.body.innerHTML.length);
-    console.log(`📏 Tamanho do HTML: ${htmlLength} caracteres`);
-
     const produtosRaw = await page.evaluate(() => {
       const items = [];
-      console.log("🔎 Executando evaluate...");
+      const cards = document.querySelectorAll('li.ui-search-layout__item');
 
-      // Seletores mais amplos possíveis
-      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card, article, div[class*="search-result"]');
-
-      console.log(`Encontrados ${cards.length} cards`);
-
-      cards.forEach((card, index) => {
+      cards.forEach((card, i) => {
         try {
-          const titulo = card.querySelector('h2, .poly-component__title, .ui-search-item__title, a')?.textContent?.trim() || "";
+          const titulo = card.querySelector('h2, .poly-component__title')?.textContent?.trim() || "";
           
           let preco = 0;
           const priceText = card.textContent || "";
-          const match = priceText.match(/R\$\s*(\d+[\d.,]*)/);
-          if (match) {
-            preco = parseFloat(match[1].replace('.', '').replace(',', '.')) || 0;
-          }
+          const match = priceText.match(/R\$\s*([\d\.,]+)/);
+          if (match) preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.')) || 0;
 
-          const linkEl = card.querySelector('a[href*="/"]');
+          const linkEl = card.querySelector('a');
           let link = linkEl ? linkEl.href : "";
 
-          if (titulo.length > 15 && preco > 30 && link) {
+          if (titulo && preco > 30 && link) {
             items.push({
               titulo: titulo.substring(0, 120),
               preco,
               link: link.split('?')[0],
-              posicao: index
+              posicao: i
             });
           }
         } catch (e) {}
       });
-
       return items;
     });
 
@@ -1619,7 +1604,6 @@ app.get("/ofertas-inteligentes", async (req, res) => {
 
     console.log(`✅ Produtos extraídos: ${produtosRaw.length}`);
 
-    // Filtro
     const analisados = produtosRaw.map(p => {
       const pontuacao = calcularPontuacaoProduto(p);
       const classif = classificarProduto(pontuacao);
@@ -1627,20 +1611,19 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     });
 
     const qualificados = analisados
-      .filter(p => p.pontuacao >= parseInt(min_pontos))
+      .filter(p => p.pontuacao >= 40)
       .sort((a, b) => b.pontuacao - a.pontuacao)
-      .slice(0, parseInt(limite));
+      .slice(0, 10);
 
     res.json({
       status: "ok",
-      categoria,
       total_analisados: produtosRaw.length,
       total_qualificados: qualificados.length,
       produtos: qualificados
     });
 
   } catch (error) {
-    console.error("❌ ERRO GRAVE:", error.message);
+    console.error("❌ Erro:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
