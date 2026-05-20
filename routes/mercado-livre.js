@@ -1,13 +1,48 @@
 const express = require("express");
 const router = express.Router();
 
-// ==================== IMPORTS DAS FUNÇÕES ====================
-// Vamos importar diretamente do servidor.js (por enquanto)
-const { abrirBrowser } = require("../servidor");
-const { 
-  calcularPontuacaoProduto, 
-  classificarProduto 
-} = require("../servidor");
+// ====================== FUNÇÕES COMPARTILHADAS (temporário) ======================
+// Vamos definir aqui para evitar import circular
+function calcularPontuacaoProduto(item) {
+  let pontuacao = 0;
+  const rating = parseFloat(item.avaliacao) || 0;
+  if (rating >= 4.8) pontuacao += 50;
+  else if (rating >= 4.5) pontuacao += 35;
+  else if (rating >= 4.0) pontuacao += 20;
+
+  const desconto = parseFloat((item.desconto || "").toString().replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+  if (desconto >= 60) pontuacao += 40;
+  else if (desconto >= 40) pontuacao += 30;
+
+  const vendidos = parseInt((item.qtd_vendidos || item.vendidos || "").toString().replace(/[^\d]/g, "")) || 0;
+  if (vendidos >= 1000) pontuacao += 25;
+  else if (vendidos >= 500) pontuacao += 15;
+
+  return Math.min(pontuacao, 150);
+}
+
+function classificarProduto(pontuacao) {
+  if (pontuacao >= 100) return { nivel: "PREMIUM", emoji: "💎" };
+  if (pontuacao >= 70)  return { nivel: "EXCELENTE", emoji: "🌟" };
+  if (pontuacao >= 50)  return { nivel: "BOM", emoji: "✅" };
+  if (pontuacao >= 30)  return { nivel: "REGULAR", emoji: "⚠️" };
+  return { nivel: "BAIXO", emoji: "❌" };
+}
+
+// ====================== FUNÇÃO DO BROWSER ======================
+async function abrirBrowser() {
+  const { chromium } = require("playwright");
+  return await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-dev-shm-usage"
+    ]
+  });
+}
+
 // ====================== ROTAS DO MERCADO LIVRE ======================
 
 router.get("/ofertas/:categoria", async (req, res) => {
@@ -24,7 +59,6 @@ router.get("/ofertas/:categoria", async (req, res) => {
     };
 
     const url = urlsPorCategoria[categoria] || urlsPorCategoria.default;
-
     console.log(`🔄 Buscando ML: ${categoria} → ${url}`);
 
     const browser = await abrirBrowser();
@@ -101,7 +135,7 @@ router.get("/ofertas/:categoria", async (req, res) => {
   }
 });
 
-// Rota simples de afiliado
+// Rota de afiliado simples
 router.post("/mercado-simples", async (req, res) => {
   try {
     const { url } = req.body;
