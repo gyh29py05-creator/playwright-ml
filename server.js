@@ -1544,6 +1544,104 @@ app.post("/tiktok/seguir", async (req, res) => {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+// ============================================
+// NOVA ROTA: OFERTAS INTELIGENTES (A MELHOR PARA VOCÊ)
+// ============================================
+app.get("/ofertas-inteligentes", async (req, res) => {
+  try {
+    const { categoria = "decoracao", limite = 12, min_pontos = 65 } = req.query;
+    
+    console.log(`🔍 Buscando ofertas inteligentes - Categoria: ${categoria} | Mínimo ${min_pontos} pontos`);
+
+    const browser = await abrirBrowser();
+    const context = await browser.newContext({ 
+      locale: "pt-BR",
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    });
+    const page = await context.newPage();
+
+    // Vai para ofertas do Mercado Livre
+    let url = `https://www.mercadolivre.com.br/ofertas?q=${encodeURIComponent(categoria)}`;
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+    // Rola a página para carregar mais produtos
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+      await page.waitForTimeout(1500);
+    }
+
+    // Extrai os produtos
+    const produtosRaw = await page.evaluate(() => {
+      const items = [];
+      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card');
+
+      cards.forEach((card, index) => {
+        try {
+          const tituloEl = card.querySelector('h2, .ui-search-item__title') || card.querySelector('a');
+          const titulo = tituloEl ? tituloEl.textContent.trim() : "";
+
+          const precoEl = card.querySelector('.price-tag-amount, .andes-money-amount__fraction');
+          let preco = 0;
+          if (precoEl) {
+            preco = parseFloat(precoEl.textContent.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+          }
+
+          const linkEl = card.querySelector('a');
+          let link = linkEl ? linkEl.href : "";
+          if (link && !link.startsWith("http")) link = "https://www.mercadolivre.com.br" + link;
+
+          const imagem = card.querySelector('img')?.src || "";
+
+          if (titulo && preco > 0 && link) {
+            items.push({ 
+              titulo, 
+              preco, 
+              link, 
+              imagem,
+              posicao: index + 1 
+            });
+          }
+        } catch (e) {}
+      });
+      return items;
+    });
+
+    await browser.close();
+
+    // === APLICA FILTRO DE QUALIDADE ===
+    const analisados = produtosRaw.map(p => {
+      const pontuacao = calcularPontuacaoProduto(p);
+      const classif = classificarProduto(pontuacao);
+      return { 
+        ...p, 
+        pontuacao, 
+        nivel_qualidade: classif.nivel, 
+        emoji_qualidade: classif.emoji 
+      };
+    });
+
+    // Filtra só os bons
+    const qualificados = analisados
+      .filter(p => p.pontuacao >= parseInt(min_pontos))
+      .sort((a, b) => b.pontuacao - a.pontuacao)
+      .slice(0, parseInt(limite));
+
+    console.log(`✅ Encontrados ${qualificados.length} produtos bons`);
+
+    res.json({
+      status: "ok",
+      categoria,
+      total_analisados: produtosRaw.length,
+      total_qualificados: qualificados.length,
+      min_pontos: parseInt(min_pontos),
+      produtos: qualificados
+    });
+
+  } catch (error) {
+    console.error("Erro na rota ofertas-inteligentes:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
+  }
+});
 
 // ============================================
 // INICIAR SERVIDOR
