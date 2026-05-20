@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
 
-// ==================== IMPORTS TEMPORÁRIOS ====================
-// Vamos importar as funções do servidor.js por enquanto
+// ==================== IMPORTS DAS FUNÇÕES ====================
+// Vamos importar diretamente do servidor.js (por enquanto)
 const { abrirBrowser } = require("../servidor");
-const { calcularPontuacaoProduto, classificarProduto } = require("../servidor");
-
+const { 
+  calcularPontuacaoProduto, 
+  classificarProduto 
+} = require("../servidor");
 // ====================== ROTAS DO MERCADO LIVRE ======================
 
 router.get("/ofertas/:categoria", async (req, res) => {
