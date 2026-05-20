@@ -1546,11 +1546,13 @@ app.post("/tiktok/seguir", async (req, res) => {
 });
 
 // ============================================
-// ROTA SIMPLES - DECORAÇÃO (TESTE FINAL)
+// ROTA OFERTAS INTELIGENTES - VERSÃO FINAL (PREÇO CORRIGIDO)
 // ============================================
 app.get("/ofertas-inteligentes", async (req, res) => {
   try {
-    console.log("🔄 Iniciando scraper simples de decoração...");
+    const { categoria = "decoracao", limite = 12, min_pontos = 35 } = req.query;
+
+    console.log(`🔄 Buscando ${categoria}...`);
 
     const browser = await abrirBrowser();
     const context = await browser.newContext({
@@ -1559,40 +1561,54 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     });
     const page = await context.newPage();
 
-    // Página mais estável para decoração
-    await page.goto("https://lista.mercadolivre.com.br/decoracao-sala_OrderId_PRICE*DESC", 
-      { waitUntil: "domcontentloaded", timeout: 90000 });
+    const url = `https://lista.mercadolivre.com.br/${encodeURIComponent(categoria)}`;
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForTimeout(7000);
 
-    await page.waitForTimeout(10000); // Espera mais tempo
-
-    // Scroll
     for (let i = 0; i < 8; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1500));
-      await page.waitForTimeout(2000);
+      await page.evaluate(() => window.scrollBy(0, 1200));
+      await page.waitForTimeout(1800);
     }
 
     const produtosRaw = await page.evaluate(() => {
       const items = [];
-      const cards = document.querySelectorAll('li.ui-search-layout__item');
+      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card');
 
-      cards.forEach((card, i) => {
+      cards.forEach((card, index) => {
         try {
-          const titulo = card.querySelector('h2, .poly-component__title')?.textContent?.trim() || "";
-          
-          let preco = 0;
-          const priceText = card.textContent || "";
-          const match = priceText.match(/R\$\s*([\d\.,]+)/);
-          if (match) preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.')) || 0;
+          // Título
+          const titulo = card.querySelector('h2, .poly-component__title, .ui-search-item__title')?.textContent?.trim() || "";
 
+          // PREÇO - Várias tentativas
+          let preco = 0;
+          const textos = [
+            card.querySelector('.andes-money-amount__fraction')?.textContent,
+            card.querySelector('.price-tag-fraction')?.textContent,
+            card.querySelector('.poly-price__current')?.textContent,
+            card.textContent
+          ];
+
+          for (const texto of textos) {
+            if (!texto) continue;
+            const match = texto.match(/R\$\s*([\d\.,]+)/);
+            if (match) {
+              const valorLimpo = match[1].replace(/\./g, '').replace(',', '.');
+              preco = parseFloat(valorLimpo);
+              if (preco > 30) break;
+            }
+          }
+
+          // Link
           const linkEl = card.querySelector('a');
           let link = linkEl ? linkEl.href : "";
+          if (link && !link.startsWith("http")) link = "https://www.mercadolivre.com.br" + link;
 
-          if (titulo && preco > 30 && link) {
+          if (titulo.length > 15 && preco > 30 && link) {
             items.push({
-              titulo: titulo.substring(0, 120),
+              titulo: titulo.substring(0, 130),
               preco,
               link: link.split('?')[0],
-              posicao: i
+              imagem: card.querySelector('img')?.src || ""
             });
           }
         } catch (e) {}
@@ -1602,21 +1618,30 @@ app.get("/ofertas-inteligentes", async (req, res) => {
 
     await browser.close();
 
-    console.log(`✅ Produtos extraídos: ${produtosRaw.length}`);
+    console.log(`📦 Extraídos: ${produtosRaw.length} produtos`);
 
+    // === FILTRO DE QUALIDADE ===
     const analisados = produtosRaw.map(p => {
       const pontuacao = calcularPontuacaoProduto(p);
       const classif = classificarProduto(pontuacao);
-      return { ...p, pontuacao, nivel_qualidade: classif.nivel, emoji_qualidade: classif.emoji };
+      return { 
+        ...p, 
+        pontuacao, 
+        nivel_qualidade: classif.nivel, 
+        emoji_qualidade: classif.emoji 
+      };
     });
 
     const qualificados = analisados
-      .filter(p => p.pontuacao >= 40)
+      .filter(p => p.pontuacao >= parseInt(min_pontos))
       .sort((a, b) => b.pontuacao - a.pontuacao)
-      .slice(0, 10);
+      .slice(0, parseInt(limite));
+
+    console.log(`✅ Qualificados: ${qualificados.length}`);
 
     res.json({
       status: "ok",
+      categoria,
       total_analisados: produtosRaw.length,
       total_qualificados: qualificados.length,
       produtos: qualificados
