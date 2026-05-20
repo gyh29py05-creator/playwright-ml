@@ -9,8 +9,11 @@ const path = require("path");
 
 const app = express();
 app.use(express.json());
-// ====================== ROTAS SEPARADAS ======================
+
+// ====================== ROTAS ======================
 const mercadoLivreRoutes = require("./routes/mercado-livre");
+
+app.use(mercadoLivreRoutes);   // Mercado Livre
 
 // ============================================
 // VARIÁVEIS DE AMBIENTE
@@ -432,13 +435,7 @@ app.get("/", (req, res) => {
     status:  "online",
     versao:  "11.0 - UNIFICADO",
     endpoints: {
-      // Mercado Livre
-      "GET /ofertas":               "Busca ofertas do dia (ML)",
-      "GET /ofertas/:categoria":    "Busca ofertas por categoria (ML)",
-      "GET /bugs":                  "Detecta bugs de preço (ML)",
-      "POST /mercado-simples":      "Gera link de afiliado simples (ML)",
-      "POST /mercado":              "Gera link de afiliado (tenta encurtar) (ML)",
-      "POST /mercado-oficial":      "Gera link meli.la oficial (ML)",
+    
       // Amazon
       "GET /amazon":                "Busca ofertas Amazon (Playwright)",
       "GET /bugs/amazon":           "Detecta bugs de preço (Amazon)",
