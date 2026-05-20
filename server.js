@@ -464,386 +464,123 @@ app.get("/", (req, res) => {
 });
 
 // ============================================
-// MERCADO LIVRE — OFERTAS POR CATEGORIA
+// MERCADO LIVRE — OFERTAS POR CATEGORIA (VERSÃO ATUALIZADA 2026)
 // ============================================
 app.get("/ofertas/:categoria", async (req, res) => {
-
   try {
-
     const { categoria } = req.params;
+    console.log(`🔄 Buscando categoria: ${categoria}`);
 
-    // =====================================
-    // URLs POR CATEGORIA
-    // =====================================
     const urlsPorCategoria = {
-
-      beleza:
-        "https://lista.mercadolivre.com.br/beleza-cuidado-pessoal",
-
-      moda:
-        "https://lista.mercadolivre.com.br/moda-acessorios",
-
-      suplementos:
-        "https://lista.mercadolivre.com.br/suplementos-proteinas",
-
-      casa:
-        "https://lista.mercadolivre.com.br/casa-moveis-decoracao",
-
-      skincare:
-        "https://lista.mercadolivre.com.br/skincare",
-
-      maquiagem:
-        "https://lista.mercadolivre.com.br/maquiagem",
-
-      organizadores:
-        "https://lista.mercadolivre.com.br/organizadores",
-
-      cozinha:
-        "https://lista.mercadolivre.com.br/cozinha",
-
-      academia:
-        "https://lista.mercadolivre.com.br/academia",
-
-      eletronicos:
-        "https://lista.mercadolivre.com.br/eletronicos",
-
-      ofertas:
-        "https://lista.www.mercadolivre.com.br/ofertas",
-
-      decoracao:
-  "https://lista.mercadolivre.com.br/decoracao-sala",
-
-casa:
-  "https://lista.mercadolivre.com.br/casa",
-
-moveis:
-  "https://lista.mercadolivre.com.br/moveis",
-
-utilidades:
-  "https://lista.mercadolivre.com.br/utilidades-domesticas",
-
-cozinha:
-  "https://lista.mercadolivre.com.br/cozinha",
-
-organizacao:
-  "https://lista.mercadolivre.com.br/organizacao",
-
-banheiro:
-  "https://lista.mercadolivre.com.br/banheiro",
-
-iluminacao:
-  "https://lista.mercadolivre.com.br/iluminacao",
-
+      decoracao: "https://lista.mercadolivre.com.br/decoracao-sala_OrderId_PRICE*DESC",
+      casa: "https://lista.mercadolivre.com.br/casa-moveis-decoracao_OrderId_PRICE*DESC",
+      cozinha: "https://lista.mercadolivre.com.br/cozinha_OrderId_PRICE*DESC",
+      organizadores: "https://lista.mercadolivre.com.br/organizadores_OrderId_PRICE*DESC",
+      beleza: "https://lista.mercadolivre.com.br/beleza-cuidado-pessoal_OrderId_PRICE*DESC",
+      default: `https://lista.mercadolivre.com.br/${categoria}_OrderId_PRICE*DESC`
     };
 
-    const url =
-      urlsPorCategoria[categoria] ||
-      urlsPorCategoria["ofertas"];
-
-    console.log(`🔄 Categoria: ${categoria}`);
+    const url = urlsPorCategoria[categoria] || urlsPorCategoria.default;
     console.log(`🌐 URL: ${url}`);
 
-    // =====================================
-    // ABRIR BROWSER
-    // =====================================
     const browser = await abrirBrowser();
-
     const context = await browser.newContext({
-
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-
-      viewport: {
-        width: 1920,
-        height: 1080
-      },
-
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+      viewport: { width: 1920, height: 1080 },
       locale: "pt-BR"
-
     });
 
     const page = await context.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForTimeout(8000);
 
-    // =====================================
-    // ABRIR PÁGINA
-    // =====================================
-    await page.goto(url, {
+    // Scroll forte
+    for (let i = 0; i < 10; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1500));
+      await page.waitForTimeout(1800);
+    }
 
-      waitUntil: "domcontentloaded",
-      timeout: 30000
-
-    });
-
-    // =====================================
-    // ESPERA RENDERIZAR
-    // =====================================
-    await page.waitForTimeout(5000);
-
-    // =====================================
-    // SIMULA USUÁRIO
-    // =====================================
-    await page.mouse.wheel(0, 2000);
-
-    await page.waitForTimeout(3000);
-    const html = await page.content();
-
-console.log(html);
-
-    // =====================================
-    // EXTRAÇÃO
-    // =====================================
     const produtos = await page.evaluate(() => {
-
       const items = [];
+      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card, article');
 
-      // =====================================
-      // PEGA TODOS OS DIVS
-      // =====================================
-      const cards = Array.from(
-        document.querySelectorAll("div")
-      );
-
-      // =====================================
-      // FILTRA SOMENTE CARDS REAIS
-      // =====================================
-      const cardsFiltrados = cards.filter(card => {
-
-        return (
-
-          card.innerText &&
-          card.innerText.length > 30 &&
-
-          card.querySelector("img") &&
-          card.querySelector("a")
-
-        );
-
-      });
-
-      console.log("CARDS:", cardsFiltrados.length);
-
-      // =====================================
-      // LOOP DOS PRODUTOS
-      // =====================================
-      cardsFiltrados.forEach((card, index) => {
-
+      cards.forEach((card, index) => {
         try {
+          const tituloEl = card.querySelector('h2, .poly-component__title, .ui-search-item__title');
+          const titulo = tituloEl ? tituloEl.textContent.trim() : "";
 
-          // =================================
-          // TÍTULO
-          // =================================
-          const titulo =
-
-            card.querySelector("h2, h3, a")
-              ?.innerText
-              ?.trim() || "";
-
-          // =================================
-          // PREÇO
-          // =================================
-          const precoTexto =
-
-            card.innerText.match(
-              /R\$\s?[\d\.]+\,?\d*/i
-            )?.[0] || "";
-
-          const preco = parseFloat(
-
-            precoTexto
-              .replace(/[^\d,]/g, "")
-              .replace(",", ".")
-
-          ) || 0;
-
-          // =================================
-          // LINK
-          // =================================
-          const link =
-
-            card.querySelector("a")?.href || "";
-
-          // =================================
-          // IMAGEM
-          // =================================
-          const imagem =
-
-            card.querySelector("img")?.src ||
-
-            card.querySelector("img")
-              ?.getAttribute("data-src") ||
-
-            "";
-
-          // =================================
-          // AVALIAÇÃO
-          // =================================
-          const avaliacaoTexto =
-
-            card.innerText.match(
-              /\d\.\d/
-            )?.[0] || "0";
-
-          const avaliacao =
-            parseFloat(avaliacaoTexto) || 0;
-
-          // =================================
-          // FILTROS
-          // =====================================
-
-          // TÍTULO
-          if (
-            !titulo ||
-            titulo.length < 5
-          ) {
-            return;
-          }
-
-          // PREÇO
-          if (
-            !preco ||
-            preco < 20
-          ) {
-            return;
-          }
-
-          // LINK
-          if (
-            !link.includes("mercadolivre")
-          ) {
-            return;
-          }
-
-          // IMAGEM
-          if (
-            !imagem
-          ) {
-            return;
-          }
-
-          // =================================
-          // BLACKLIST
-          // =================================
-          const blacklist = [
-
-            "película",
-            "cabo",
-            "adaptador",
-            "conector",
-            "adesivo",
-            "refil",
-            "parafuso",
-            "chip",
-            "suporte avulso"
-
+          // Preço melhorado
+          let preco = 0;
+          const priceSelectors = [
+            '.andes-money-amount__fraction',
+            '.price-tag-fraction',
+            '.poly-price__current',
+            '.andes-money-amount'
           ];
 
-          if (
-
-            blacklist.some(p =>
-
-              titulo
-                .toLowerCase()
-                .includes(p)
-
-            )
-
-          ) {
-            return;
+          for (const sel of priceSelectors) {
+            const el = card.querySelector(sel);
+            if (el) {
+              const texto = el.textContent.replace(/[^\d,]/g, '').replace(',', '.');
+              const valor = parseFloat(texto);
+              if (valor > 30) {
+                preco = valor;
+                break;
+              }
+            }
           }
 
-          // =================================
-          // SALVAR
-          // =================================
-          console.log({
-  titulo,
-  preco,
-  link,
-  imagem
-});
-          items.push({
+          const linkEl = card.querySelector('a');
+          let link = linkEl ? linkEl.href : "";
+          if (link && !link.startsWith("http")) link = "https://www.mercadolivre.com.br" + link;
 
-            titulo,
-            preco,
-            avaliacao,
-            link,
-            imagem,
-            posicao: index + 1
+          const imagem = card.querySelector('img')?.src || card.querySelector('img')?.getAttribute('data-src') || "";
 
-          });
-
-        } catch (e) {
-
-          console.log(
-            `Erro no card ${index}:`,
-            e.message
-          );
-
-        }
-
+          if (titulo.length > 15 && preco > 30 && link.includes("mercadolivre")) {
+            items.push({
+              titulo: titulo.substring(0, 130),
+              preco,
+              link: link.split('?')[0],
+              imagem,
+              posicao: index + 1
+            });
+          }
+        } catch (e) {}
       });
 
-      // =====================================
-      // REMOVE DUPLICADOS
-      // =====================================
-      const vistos = new Set();
-
-      return items.filter(p => {
-
-        const id =
-          p.link.match(/MLB\d+/)?.[0];
-
-        if (!id) return false;
-
-        if (vistos.has(id)) {
-          return false;
-        }
-
-        vistos.add(id);
-
-        return true;
-
-      });
-
+      return items;
     });
 
-    // =====================================
-    // FECHAR BROWSER
-    // =====================================
     await browser.close();
 
-    console.log(
-      `✅ ${produtos.length} produtos encontrados`
-    );
+    console.log(`✅ ${produtos.length} produtos extraídos de ${categoria}`);
 
-    // =====================================
-    // RESPOSTA
-    // =====================================
+    // Aplicar pontuação
+    const comPontuacao = produtos.map(p => {
+      const pontuacao = calcularPontuacaoProduto(p);
+      const classif = classificarProduto(pontuacao);
+      return { 
+        ...p, 
+        pontuacao, 
+        nivel_qualidade: classif.nivel, 
+        emoji_qualidade: classif.emoji 
+      };
+    });
+
+    comPontuacao.sort((a, b) => b.pontuacao - a.pontuacao);
+
     res.json({
-
       status: "ok",
       categoria,
-      total: produtos.length,
+      total: comPontuacao.length,
       data_extracao: new Date().toISOString(),
-      produtos
-
+      produtos: comPontuacao.slice(0, 20)   // limita a 20 melhores
     });
 
   } catch (error) {
-
-    console.error(
-      "❌ ERRO ML:",
-      error.message
-    );
-
-    res.status(500).json({
-
-      status: "erro",
-      mensagem: error.message
-
-    });
-
+    console.error("❌ ERRO ML:", error.message);
+    res.status(500).json({ status: "erro", mensagem: error.message });
   }
-
 });
 
 // ============================================
