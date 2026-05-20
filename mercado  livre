@@ -1,0 +1,506 @@
+# 🔧 GUIA DE OTIMIZAÇÃO - WORKFLOW MERCADO LIVRE N8N
+
+## 📊 SEU FLUXO ATUAL
+```
+Agendamento → Buscar Ofertas ML → Processar → Gerar Link → 
+HTTP Request → Code JavaScript → Encurtar Link → Montar Dados → Enviar
+```
+
+## 🎯 PROBLEMAS QUE VI:
+1. ❌ Muitos nodos (pode travar)
+2. ❌ Sem filtro de qualidade
+3. ❌ Sem detecção de bugs
+4. ❌ Mensagens genéricas
+5. ❌ Sem evitar duplicatas
+
+---
+
+## ✅ FLUXO OTIMIZADO RECOMENDADO
+
+```
+┌─────────────────┐
+│  1. AGENDAMENTO │ → Horários nobres (12h, 19h)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  2. HTTP REQUEST│ → GET /ofertas OU /bugs
+│  (Seu servidor) │    (escolher um endpoint)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  3. CODE NODE   │ → Filtrar e classificar
+│  (Inteligente)  │    - Pontuação
+└────────┬────────┘    - Remover duplicatas
+         │              - Top 10 produtos
+         ▼
+┌─────────────────┐
+│  4. SWITCH      │ → Separar por qualidade
+│  (Qualidade)    │    - Premium (enviar já)
+└────────┬────────┘    - Regular (agendar)
+         │              - Ruim (descartar)
+         ▼
+┌─────────────────┐
+│  5. CODE NODE   │ → Gerar mensagem
+│  (Formatar)     │    - Com IA (opcional)
+└────────┬────────┘    - Template padrão
+         │
+         ▼
+┌─────────────────┐
+│  6. HTTP REQUEST│ → Encurtar link
+│  (Bitly/TinyURL)│    (opcional)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  7. ENVIAR      │ → WhatsApp/Telegram
+│  (com imagem)   │
+└─────────────────┘
+```
+
+---
+
+## 🔥 PASSO A PASSO DETALHADO
+
+### 📌 NODO 1: AGENDAMENTO (Schedule Trigger)
+
+**Configuração:**
+```json
+{
+  "rule": {
+    "interval": [
+      {
+        "field": "hours",
+        "hoursInterval": 1
+      }
+    ]
+  }
+}
+```
+
+**OU Horários específicos (Cron):**
+```
+0 12,19 * * * (12h e 19h todos os dias)
+```
+
+---
+
+### 📌 NODO 2: HTTP REQUEST - Buscar Produtos
+
+**Opção A - Ofertas Normais:**
+```json
+{
+  "method": "GET",
+  "url": "https://playwright-playwright.mtuqcs.easypanel.host/ofertas",
+  "options": {
+    "timeout": 60000
+  }
+}
+```
+
+**Opção B - BUGS (Recomendado!):**
+```json
+{
+  "method": "GET",
+  "url": "https://playwright-playwright.mtuqcs.easypanel.host/bugs",
+  "options": {
+    "timeout": 60000
+  }
+}
+```
+
+**💡 DICA:** Use `/bugs` para pegar só os produtos com preço suspeito!
+
+---
+
+### 📌 NODO 3: CODE NODE - Filtrar e Classificar
+
+**Cole este código:**
+
+```javascript
+// ========================================
+// 🧠 CÓDIGO INTELIGENTE DE FILTRAGEM
+// ========================================
+
+const items = $input.all();
+const produtos = items[0].json.produtos || items[0].json.bugs || [];
+
+console.log(`📦 Total de produtos recebidos: ${produtos.length}`);
+
+// ========================================
+// FUNÇÃO: Calcular pontuação
+// ========================================
+function calcularPontuacao(produto) {
+  let pontos = 0;
+  
+  // Rating
+  const rating = parseFloat(produto.avaliacao || 0);
+  if (rating >= 4.8) pontos += 50;
+  else if (rating >= 4.5) pontos += 35;
+  else if (rating >= 4.0) pontos += 20;
+  
+  // Desconto
+  const desconto = parseFloat((produto.desconto || "0").replace(/[^\d.,]/g, "").replace(",", "."));
+  if (desconto >= 60) pontos += 40;
+  else if (desconto >= 40) pontos += 30;
+  else if (desconto >= 20) pontos += 15;
+  
+  // Avaliações
+  const qtdAval = parseInt((produto.qtd_avaliacoes || "0").replace(/[^\d]/g, ""));
+  if (qtdAval >= 1000) pontos += 30;
+  else if (qtdAval >= 500) pontos += 20;
+  else if (qtdAval >= 100) pontos += 10;
+  
+  // Mais vendido
+  if (produto.mais_vendido) pontos += 15;
+  
+  return pontos;
+}
+
+// ========================================
+// FUNÇÃO: Classificar qualidade
+// ========================================
+function classificar(pontos) {
+  if (pontos >= 100) return { nivel: "PREMIUM", emoji: "💎", prioridade: 1 };
+  if (pontos >= 70) return { nivel: "EXCELENTE", emoji: "🌟", prioridade: 2 };
+  if (pontos >= 50) return { nivel: "BOM", emoji: "✅", prioridade: 3 };
+  return { nivel: "REGULAR", emoji: "⚠️", prioridade: 4 };
+}
+
+// ========================================
+// PROCESSAR PRODUTOS
+// ========================================
+const produtosProcessados = produtos.map(p => {
+  const pontuacao = calcularPontuacao(p);
+  const classificacao = classificar(pontuacao);
+  
+  return {
+    ...p,
+    pontuacao,
+    nivel_qualidade: classificacao.nivel,
+    emoji_qualidade: classificacao.emoji,
+    prioridade: classificacao.prioridade
+  };
+});
+
+// ========================================
+// FILTRAR (mínimo 50 pontos)
+// ========================================
+const produtosFiltrados = produtosProcessados.filter(p => p.pontuacao >= 50);
+
+// ========================================
+// ORDENAR (melhor primeiro)
+// ========================================
+produtosFiltrados.sort((a, b) => b.pontuacao - a.pontuacao);
+
+// ========================================
+// TOP 10
+// ========================================
+const top10 = produtosFiltrados.slice(0, 10);
+
+console.log(`✅ Produtos qualificados: ${produtosFiltrados.length}`);
+console.log(`🏆 Top 10 selecionados`);
+
+// ========================================
+// RETORNAR CADA PRODUTO COMO UM ITEM
+// ========================================
+return top10.map(produto => ({
+  json: produto
+}));
+```
+
+---
+
+### 📌 NODO 4: SWITCH - Separar por Qualidade
+
+**Modo:** Based on expression
+
+**Rota 1 - PREMIUM (enviar imediatamente):**
+```javascript
+{{ $json.nivel_qualidade === "PREMIUM" || $json.nivel_qualidade === "EXCELENTE" }}
+```
+
+**Rota 2 - BOM (agendar para depois):**
+```javascript
+{{ $json.nivel_qualidade === "BOM" }}
+```
+
+**Rota 3 - REGULAR (descartar ou grupo secundário):**
+```javascript
+{{ $json.nivel_qualidade === "REGULAR" }}
+```
+
+---
+
+### 📌 NODO 5: CODE NODE - Formatar Mensagem
+
+**Cole este código:**
+
+```javascript
+// ========================================
+// 💬 GERAR MENSAGEM FORMATADA
+// ========================================
+
+const produto = $input.item.json;
+
+// ========================================
+// DETECTAR SE É BUG
+// ========================================
+const ehBug = produto.razoes_bug && produto.razoes_bug.length > 0;
+
+let mensagem = "";
+
+// ========================================
+// TEMPLATE PARA BUG
+// ========================================
+if (ehBug) {
+  mensagem = `
+🚨🚨🚨 *ALERTA DE BUG* 🚨🚨🚨
+💛⚡ *MERCADO LIVRE* ⚡💛
+
+⚠️ *ERRO DE PREÇO DETECTADO!*
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *${produto.titulo}*
+
+💰 *PREÇO COM BUG: R$ ${produto.preco}*
+${produto.desconto ? `🔥 *${produto.desconto}% OFF*` : ''}
+
+${produto.avaliacao ? `${"⭐".repeat(Math.floor(produto.avaliacao))} ${produto.avaliacao}/5` : ''}
+${produto.qtd_avaliacoes ? `👥 ${produto.qtd_avaliacoes} avaliações` : ''}
+
+❗ *POR QUE É BUG:*
+${produto.razoes_bug.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+⏰ *COMPRE IMEDIATAMENTE!*
+⚡ *BUG PODE SER CORRIGIDO A QUALQUER MOMENTO!*
+
+🛒 *LINK DIRETO:*
+👉 ${produto.link}
+
+⚠️ *NÃO PERCA TEMPO!*
+
+━━━━━━━━━━━━━━━━━━━━━━
+#BugDePreço #Urgente #CompraAgora
+💛 #MercadoLivre
+`;
+} 
+// ========================================
+// TEMPLATE NORMAL
+// ========================================
+else {
+  mensagem = `
+💛 *MERCADO LIVRE* 💛
+
+${produto.emoji_qualidade} *${produto.nivel_qualidade}*
+
+🏆 *${produto.titulo}*
+
+💰 *PREÇO ESPECIAL: R$ ${produto.preco}*
+${produto.desconto ? `🎉 *${produto.desconto}% OFF*` : ''}
+
+${produto.avaliacao ? `${"⭐".repeat(Math.floor(produto.avaliacao))} ${produto.avaliacao}/5` : ''}
+${produto.qtd_avaliacoes ? `👥 ${produto.qtd_avaliacoes} avaliações` : ''}
+${produto.qtd_vendidos ? `🔥 ${produto.qtd_vendidos} vendidos` : ''}
+
+✨ *BENEFÍCIOS:*
+━━━━━━━━━━━━━━━━
+📦 Frete disponível
+💳 Parcelamento sem juros
+🎁 Cashback via Mercado Pontos
+
+🛒 *GARANTIR O MEU:*
+👉 ${produto.link}
+
+⏰ *Oferta por tempo limitado!*
+
+#MercadoLivre #Ofertas #Desconto
+━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+}
+
+// ========================================
+// RETORNAR
+// ========================================
+return {
+  json: {
+    ...produto,
+    mensagem_formatada: mensagem,
+    chat_id: "SEU_GRUPO_ID@g.us", // Coloque o ID do seu grupo aqui
+    media_url: produto.imagem || ""
+  }
+};
+```
+
+---
+
+### 📌 NODO 6: ENCURTAR LINK (Opcional)
+
+**HTTP Request - Bitly:**
+
+```json
+{
+  "method": "POST",
+  "url": "https://api-ssl.bitly.com/v4/shorten",
+  "authentication": "headerAuth",
+  "headerAuth": {
+    "name": "Authorization",
+    "value": "Bearer SEU_TOKEN_BITLY"
+  },
+  "body": {
+    "long_url": "={{ $json.link }}"
+  }
+}
+```
+
+**Depois, adicione CODE NODE para atualizar a mensagem:**
+
+```javascript
+const item = $input.item.json;
+const linkCurto = $('HTTP Request').item.json.link; // Link encurtado do Bitly
+
+// Substituir link longo pelo curto na mensagem
+const mensagemAtualizada = item.mensagem_formatada.replace(
+  item.link,
+  linkCurto
+);
+
+return {
+  json: {
+    ...item,
+    mensagem_formatada: mensagemAtualizada,
+    link_curto: linkCurto
+  }
+};
+```
+
+---
+
+### 📌 NODO 7: ENVIAR PARA WHATSAPP/TELEGRAM
+
+**WhatsApp (Evolution API):**
+
+```json
+{
+  "method": "POST",
+  "url": "https://sua-api-whatsapp.com/message/sendMedia",
+  "headers": {
+    "Content-Type": "application/json",
+    "apikey": "SUA_API_KEY"
+  },
+  "body": {
+    "number": "{{ $json.chat_id }}",
+    "mediatype": "image",
+    "media": "{{ $json.media_url }}",
+    "caption": "={{ $json.mensagem_formatada }}"
+  }
+}
+```
+
+**Telegram:**
+
+Use o nodo **Telegram** nativo do N8n:
+- Resource: Message
+- Operation: Send Photo
+- Chat ID: `{{ $json.chat_id }}`
+- Photo: `{{ $json.media_url }}`
+- Caption: `={{ $json.mensagem_formatada }}`
+- Parse Mode: Markdown
+
+---
+
+## 🎯 FLUXO COMPLETO RESUMIDO
+
+```
+1️⃣ Schedule (12h, 19h)
+     ↓
+2️⃣ HTTP Request → GET /bugs (seu servidor)
+     ↓
+3️⃣ Code → Filtrar e classificar (Top 10)
+     ↓
+4️⃣ Switch → Separar por qualidade
+     ↓
+5️⃣ Code → Gerar mensagem formatada
+     ↓
+6️⃣ HTTP Request → Encurtar link (opcional)
+     ↓
+7️⃣ WhatsApp/Telegram → Enviar
+```
+
+---
+
+## 💡 DICAS IMPORTANTES
+
+### ✅ Para BUGS:
+- Use endpoint `/bugs` 
+- Mensagens com URGÊNCIA MÁXIMA
+- Envie IMEDIATAMENTE (sem agendar)
+- Adicione emoji 🚨
+
+### ✅ Para OFERTAS NORMAIS:
+- Use endpoint `/ofertas`
+- Filtrar por pontuação (mínimo 50)
+- Pode agendar produtos "BOM" para depois
+
+### ✅ Evitar Duplicatas:
+No Code Node de filtro, adicione:
+
+```javascript
+// Array para guardar produtos já enviados (últimas 24h)
+const staticData = $getWorkflowStaticData('node');
+if (!staticData.enviados) {
+  staticData.enviados = [];
+}
+
+// Remover produtos antigos (mais de 24h)
+const umDiaAtras = Date.now() - (24 * 60 * 60 * 1000);
+staticData.enviados = staticData.enviados.filter(
+  item => item.timestamp > umDiaAtras
+);
+
+// Filtrar duplicatas
+const produtosFiltrados = top10.filter(produto => {
+  const jaEnviado = staticData.enviados.some(
+    item => item.link === produto.link
+  );
+  
+  if (!jaEnviado) {
+    // Adicionar na lista
+    staticData.enviados.push({
+      link: produto.link,
+      timestamp: Date.now()
+    });
+    return true;
+  }
+  
+  return false;
+});
+
+return produtosFiltrados.map(p => ({ json: p }));
+```
+
+---
+
+## 🚀 RESULTADO ESPERADO
+
+✅ Só produtos de qualidade
+✅ Mensagens formatadas e bonitas
+✅ Sem duplicatas
+✅ BUGS enviados com URGÊNCIA
+✅ Imagem + texto junto
+✅ Links encurtados (rastreáveis)
+
+---
+
+## 📊 MONITORAMENTO
+
+Adicione no final um nodo **Google Sheets** para salvar:
+- Data/hora
+- Produto enviado
+- Link
+- Pontuação
+- Cliques (se usar Bitly)
+
+Isso te ajuda a ver quais produtos convertem mais! 📈
