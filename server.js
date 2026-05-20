@@ -1544,14 +1544,15 @@ app.post("/tiktok/seguir", async (req, res) => {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+
 // ============================================
-// ROTA CORRIGIDA - OFERTAS INTELIGENTES (MELHORADA)
+// ROTA MELHORADA - EXTRATOR FORTE 2026
 // ============================================
 app.get("/ofertas-inteligentes", async (req, res) => {
   try {
-    const { categoria = "decoracao", limite = 12, min_pontos = 60 } = req.query;
+    const { categoria = "decoracao", limite = 12, min_pontos = 50 } = req.query;
     
-    console.log(`🔍 Buscando ofertas inteligentes - Categoria: ${categoria} | Mínimo ${min_pontos} pontos`);
+    console.log(`🔍 Buscando: ${categoria} | min_pontos: ${min_pontos}`);
 
     const browser = await abrirBrowser();
     const context = await browser.newContext({ 
@@ -1561,45 +1562,47 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     const page = await context.newPage();
 
     const url = `https://www.mercadolivre.com.br/ofertas?q=${encodeURIComponent(categoria)}`;
-    console.log(`🌐 Acessando: ${url}`);
-    
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(4000);
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 80000 });
+    await page.waitForTimeout(5000);
 
-    // Rola a página várias vezes
-    for (let i = 0; i < 6; i++) {
-      await page.evaluate(() => window.scrollBy(0, 800));
-      await page.waitForTimeout(1200);
+    // Scroll forte
+    for (let i = 0; i < 8; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1000));
+      await page.waitForTimeout(1500);
     }
 
-    // === NOVO EXTRATOR MAIS FORTE ===
     const produtosRaw = await page.evaluate(() => {
       const items = [];
-      // Seletores atualizados do Mercado Livre 2026
-      const cards = document.querySelectorAll('li.ui-search-layout__item, div[class*="andes-card"], article');
+      const cards = document.querySelectorAll('li.ui-search-layout__item, .andes-card, article[data-testid]');
 
       cards.forEach((card, index) => {
         try {
           // Título
-          const tituloEl = card.querySelector('h2, .poly-component__title, a[href*="/"]');
-          const titulo = tituloEl ? tituloEl.textContent.trim() : "";
+          let titulo = "";
+          const tituloEl = card.querySelector('h2, .poly-component__title, .ui-search-item__title');
+          if (tituloEl) titulo = tituloEl.textContent.trim();
 
-          // Preço (vários formatos possíveis)
+          // Preço - Vários seletores possíveis
           let preco = 0;
-          const precoSelectors = [
-            '.price-tag-amount .andes-money-amount__fraction',
-            '.poly-price__current .andes-money-amount__fraction',
+          const priceSelectors = [
             '.andes-money-amount__fraction',
-            '[class*="price"] .andes-money-amount'
+            '.price-tag-fraction',
+            '.poly-price__current .andes-money-amount__fraction',
+            '[class*="price"] .andes-money-amount__fraction',
+            '.andes-money-amount'
           ];
-          
-          for (const sel of precoSelectors) {
-            const el = card.querySelector(sel);
-            if (el) {
-              const textoPreco = el.textContent.replace(/[^\d,]/g, '').replace(',', '.');
-              preco = parseFloat(textoPreco) || 0;
-              if (preco > 10) break;
+
+          for (const selector of priceSelectors) {
+            const els = card.querySelectorAll(selector);
+            for (const el of els) {
+              const texto = el.textContent.replace(/[^\d,]/g, '').replace(',', '.');
+              const valor = parseFloat(texto);
+              if (valor > 20) {
+                preco = valor;
+                break;
+              }
             }
+            if (preco > 20) break;
           }
 
           // Link
@@ -1608,16 +1611,16 @@ app.get("/ofertas-inteligentes", async (req, res) => {
           if (link && !link.startsWith("http")) link = "https://www.mercadolivre.com.br" + link;
 
           // Imagem
-          const imgEl = card.querySelector('img');
-          const imagem = imgEl ? (imgEl.src || imgEl.getAttribute('data-src') || "") : "";
+          const img = card.querySelector('img');
+          const imagem = img ? (img.src || img.getAttribute('data-src') || img.getAttribute('srcset') || "") : "";
 
-          if (titulo && preco > 30 && link) {
-            items.push({ 
-              titulo: titulo.substring(0, 120), 
-              preco, 
-              link, 
+          if (titulo.length > 10 && preco > 30 && link) {
+            items.push({
+              titulo: titulo.substring(0, 130),
+              preco,
+              link: link.split('?')[0],
               imagem,
-              posicao: index + 1 
+              posicao: index + 1
             });
           }
         } catch (e) {}
@@ -1627,9 +1630,9 @@ app.get("/ofertas-inteligentes", async (req, res) => {
 
     await browser.close();
 
-    console.log(`📦 Produtos extraídos: ${produtosRaw.length}`);
+    console.log(`📦 Extraídos: ${produtosRaw.length} produtos`);
 
-    // === FILTRO DE QUALIDADE ===
+    // Filtro de qualidade
     const analisados = produtosRaw.map(p => {
       const pontuacao = calcularPontuacaoProduto(p);
       const classif = classificarProduto(pontuacao);
@@ -1646,7 +1649,7 @@ app.get("/ofertas-inteligentes", async (req, res) => {
       .sort((a, b) => b.pontuacao - a.pontuacao)
       .slice(0, parseInt(limite));
 
-    console.log(`✅ Produtos bons encontrados: ${qualificados.length}`);
+    console.log(`✅ Qualificados: ${qualificados.length}`);
 
     res.json({
       status: "ok",
@@ -1658,10 +1661,11 @@ app.get("/ofertas-inteligentes", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Erro na rota ofertas-inteligentes:", error.message);
+    console.error("❌ Erro:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
 });
+
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
