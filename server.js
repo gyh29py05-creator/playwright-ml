@@ -11,8 +11,7 @@ const app = express();
 app.use(express.json());
 
 // ====================== ROTAS ======================
-const mercadoLivreRoutes = require("./routes/mercado-livre");
-
+const mercadoLivreRoutes = require("./mercado-livre");   // sem a pasta routes
 app.use(mercadoLivreRoutes);   // Mercado Livre
 
 // ============================================
