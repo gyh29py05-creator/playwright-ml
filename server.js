@@ -4,15 +4,13 @@
 require("dotenv").config();
 const express  = require("express");
 const { chromium } = require("playwright");
-const fs   = require("fs");
-const path = require("path");
 
 const app = express();
 app.use(express.json());
 
-// ====================== ROTAS ======================
-const mercadoLivreRoutes = require("./mercado-livre");   // sem a pasta routes
-app.use(mercadoLivreRoutes);   // Mercado Livre
+// ====================== ROTAS EXTERNAS ======================
+const mercadoLivreRoutes = require("./mercado-livre");
+app.use(mercadoLivreRoutes);
 
 // ============================================
 // VARIÁVEIS DE AMBIENTE
@@ -27,8 +25,45 @@ const ML_TRACKING_ID         = process.env.ML_TRACKING_ID        || "ragi6098412
 const ML_COOKIE              = process.env.ML_COOKIE             || "";
 
 if (!CREATORS_CLIENT_ID || !CREATORS_CLIENT_SECRET) {
-  console.warn("⚠️  Credenciais Amazon não encontradas — endpoints Amazon estarão indisponíveis.");
+  console.warn("⚠️  Credenciais Amazon não encontradas — endpoints Amazon Creators API estarão indisponíveis.");
 }
+
+// ============================================
+// CATEGORIAS MAIS BUSCADAS — AMAZON BRASIL 2026
+// Rotacionadas automaticamente para maior relevância
+// ============================================
+const AMAZON_CATEGORIAS = [
+  {
+    nome: "Eletrônicos",
+    url: "https://www.amazon.com.br/s?i=electronics&bbn=16243080011&rh=n%3A16243080011%2Cp_n_pct-off-with-tax%3A2579402011&s=review-rank&dc",
+    descricao: "Fones, cabos, acessórios tech"
+  },
+  {
+    nome: "Air Fryer e Eletrodomésticos",
+    url: "https://www.amazon.com.br/s?k=air+fryer&i=kitchen&rh=p_n_pct-off-with-tax%3A2579402011&s=review-rank&dc",
+    descricao: "Air fryer, eletros de cozinha"
+  },
+  {
+    nome: "Beleza e Cuidados Pessoais",
+    url: "https://www.amazon.com.br/s?i=beauty&bbn=18971816011&rh=n%3A18971816011%2Cp_n_pct-off-with-tax%3A2579402011&s=review-rank&dc",
+    descricao: "Skincare, maquiagem, cabelos"
+  },
+  {
+    nome: "Casa e Cozinha",
+    url: "https://www.amazon.com.br/s?i=kitchen&bbn=16209062011&rh=n%3A16209062011%2Cp_n_pct-off-with-tax%3A2579402011&s=review-rank&dc",
+    descricao: "Itens para casa e cozinha"
+  },
+  {
+    nome: "Informática",
+    url: "https://www.amazon.com.br/s?i=computers&bbn=16243604011&rh=n%3A16243604011%2Cp_n_pct-off-with-tax%3A2579402011&s=review-rank&dc",
+    descricao: "Notebooks, periféricos, acessórios"
+  },
+  {
+    nome: "Suplementos e Saúde",
+    url: "https://www.amazon.com.br/s?k=suplemento+proteina&i=hpc&rh=p_n_pct-off-with-tax%3A2579402011&s=review-rank&dc",
+    descricao: "Proteína, vitaminas, suplementos"
+  }
+];
 
 // ============================================
 // PALETA DE CORES / PLATAFORMAS
@@ -166,6 +201,59 @@ async function abrirBrowser() {
 }
 
 // ============================================
+// HELPER: PARSEAR PREÇO AMAZON CORRETAMENTE
+// Resolve o bug de inversão preco / preco_original
+// ============================================
+function parsearPrecoAmazon(card) {
+  // Preço atual: sempre o menor, exibido em destaque
+  const precoInteiroEl = card.querySelector(".a-price:not(.a-text-price) .a-price-whole");
+  const precoFracaoEl  = card.querySelector(".a-price:not(.a-text-price) .a-price-fraction");
+  const precoInteiro   = precoInteiroEl?.textContent?.replace(/[^\d]/g, "") || "0";
+  const precoFracao    = precoFracaoEl?.textContent?.replace(/[^\d]/g, "")  || "00";
+  const preco          = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
+
+  // Preço original: o que está riscado (.a-text-price)
+  const precoOrigEl  = card.querySelector(".a-text-price .a-offscreen");
+  const precoOrigTxt = precoOrigEl?.textContent?.trim() || "";
+  const preco_original = parseFloat(precoOrigTxt.replace(/[^\d,]/g, "").replace(",", ".")) || 0;
+
+  // Desconto: somente se vier com % — ignora textos como "1 nova oferta"
+  const descontoEl  = card.querySelector("[class*='savingsPercentage']");
+  let descontoTxt   = descontoEl?.textContent?.trim() || "";
+  // Garante que é realmente um percentual
+  if (!descontoTxt.includes("%")) {
+    // Calcula manualmente se tiver preço original
+    if (preco_original > 0 && preco > 0 && preco_original > preco) {
+      const calc = Math.round(((preco_original - preco) / preco_original) * 100);
+      descontoTxt = `-${calc}%`;
+    } else {
+      descontoTxt = "";
+    }
+  }
+
+  // Sanidade: se preço atual for maior que original, algo está errado — zera o original
+  const preco_original_final = (preco_original > 0 && preco_original > preco) ? preco_original : 0;
+
+  return { preco, preco_original: preco_original_final, desconto: descontoTxt };
+}
+
+// ============================================
+// HELPER: EXTRAIR NÚMERO DE AVALIAÇÕES
+// ============================================
+function parsearAvaliacoes(card) {
+  const avaliacaoEl  = card.querySelector("span.a-icon-alt");
+  const avaliacaoTxt = avaliacaoEl?.textContent?.trim() || "";
+  // Ex: "4,5 de 5 estrelas" → 4.5
+  const avaliacao = parseFloat(avaliacaoTxt.replace(",", ".")) || 0;
+
+  const reviewsEl  = card.querySelector("[aria-label*='avaliações'] span, [aria-label*='stars'] + span, a[href*='customerReviews'] span");
+  const reviewsTxt = reviewsEl?.textContent?.replace(/[^\d]/g, "") || "0";
+  const num_reviews = parseInt(reviewsTxt) || 0;
+
+  return { avaliacao, num_reviews };
+}
+
+// ============================================
 // SISTEMA DE PONTUAÇÃO DE PRODUTOS
 // ============================================
 function calcularPontuacaoProduto(item) {
@@ -177,20 +265,28 @@ function calcularPontuacaoProduto(item) {
   else if (rating >= 4.0) pontuacao += 20;
   else if (rating >= 3.5) pontuacao += 10;
 
-  const desconto = parseFloat((item.desconto || "").toString().replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-  if (desconto >= 60)      pontuacao += 40;
-  else if (desconto >= 40) pontuacao += 30;
-  else if (desconto >= 20) pontuacao += 15;
+  // Desconto: extrai número do texto "-20%" ou "20%"
+  const descontoNum = parseFloat(
+    (item.desconto || "").toString().replace(/[^\d.,]/g, "").replace(",", ".")
+  ) || 0;
+  if (descontoNum >= 60)      pontuacao += 40;
+  else if (descontoNum >= 40) pontuacao += 30;
+  else if (descontoNum >= 20) pontuacao += 15;
+  else if (descontoNum >= 10) pontuacao += 5;
 
-  const avaliacoes = parseInt((item.qtd_avaliacoes || item.num_reviews || "").toString().replace(/[^\d]/g, "")) || 0;
+  const avaliacoes = parseInt(
+    (item.qtd_avaliacoes || item.num_reviews || "").toString().replace(/[^\d]/g, "")
+  ) || 0;
   if (avaliacoes >= 1000)     pontuacao += 30;
   else if (avaliacoes >= 500) pontuacao += 20;
   else if (avaliacoes >= 100) pontuacao += 10;
 
-  if (item.mais_vendido)  pontuacao += 15;
-  if (item.frete_gratis)  pontuacao += 10;
+  if (item.mais_vendido) pontuacao += 15;
+  if (item.frete_gratis) pontuacao += 10;
 
-  const vendidos = parseInt((item.qtd_vendidos || item.vendidos || "").toString().replace(/[^\d]/g, "")) || 0;
+  const vendidos = parseInt(
+    (item.qtd_vendidos || item.vendidos || "").toString().replace(/[^\d]/g, "")
+  ) || 0;
   if (vendidos >= 1000)     pontuacao += 25;
   else if (vendidos >= 500) pontuacao += 15;
   else if (vendidos >= 100) pontuacao += 5;
@@ -210,10 +306,10 @@ function classificarProduto(pontuacao) {
 // DETECÇÃO DE BUGS DE PREÇO
 // ============================================
 function detectarBugML(item) {
-  const titulo  = (item.titulo || "").toLowerCase();
+  const titulo   = (item.titulo || "").toLowerCase();
   const desconto = parseFloat((item.desconto || "").toString().replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-  const preco   = item.preco || 0;
-  const razoes  = [];
+  const preco    = item.preco || 0;
+  const razoes   = [];
 
   if (desconto >= 70) razoes.push(`Desconto de ${desconto}% (acima de 70%)`);
   if (titulo.includes("iphone")      && preco > 0 && preco < 1800) razoes.push(`iPhone por R$${preco} (suspeito abaixo de R$1.800)`);
@@ -313,9 +409,9 @@ PRODUTO: ${produto.titulo}
 PLATAFORMA: ${style.nome}
 PREÇO: R$ ${produto.preco}
 ${produto.preco_original ? `PREÇO ORIGINAL: R$ ${produto.preco_original}` : ""}
-${produto.desconto ? `DESCONTO: ${produto.desconto}%` : ""}
+${produto.desconto ? `DESCONTO: ${produto.desconto}` : ""}
 ${produto.avaliacao ? `AVALIAÇÃO: ${produto.avaliacao}/5` : ""}
-${produto.qtd_avaliacoes || produto.num_reviews ? `AVALIAÇÕES: ${produto.qtd_avaliacoes || produto.num_reviews}` : ""}
+${produto.num_reviews ? `AVALIAÇÕES: ${produto.num_reviews}` : ""}
 
 REGRAS:
 - Use o emoji ${style.emoji} no início
@@ -333,8 +429,8 @@ RESPONDA APENAS COM A MENSAGEM FORMATADA, SEM EXPLICAÇÕES.`;
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "Content-Type":    "application/json",
-        "x-api-key":       CLAUDE_API_KEY,
+        "Content-Type":      "application/json",
+        "x-api-key":         CLAUDE_API_KEY,
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
@@ -363,25 +459,23 @@ function gerarMensagemPadrao(produto, plataforma) {
   mensagem += `${classificacao.emoji} *${classificacao.nivel}*\n\n`;
   mensagem += `*${produto.titulo}*\n\n`;
   mensagem += `💰 *PREÇO:*\n`;
-  if (produto.preco_original && produto.desconto) {
+  if (produto.preco_original && produto.preco_original > 0 && produto.desconto) {
     mensagem += `De: ~R$ ${produto.preco_original}~\n`;
-    mensagem += `*Por: R$ ${produto.preco}* (${produto.desconto}% OFF)\n\n`;
+    mensagem += `*Por: R$ ${produto.preco}* (${produto.desconto} OFF)\n\n`;
   } else {
     mensagem += `*R$ ${produto.preco}*\n\n`;
   }
   if (produto.avaliacao) {
-    const estrelas = "⭐".repeat(Math.floor(produto.avaliacao));
+    const estrelas = "⭐".repeat(Math.min(Math.floor(produto.avaliacao), 5));
     mensagem += `${estrelas} ${produto.avaliacao}/5`;
-    if (produto.qtd_avaliacoes || produto.num_reviews) {
-      mensagem += ` (${produto.qtd_avaliacoes || produto.num_reviews} avaliações)`;
-    }
+    if (produto.num_reviews) mensagem += ` (${produto.num_reviews} avaliações)`;
     mensagem += `\n\n`;
   }
   if (produto.qtd_vendidos || produto.vendidos) {
     mensagem += `🔥 *${produto.qtd_vendidos || produto.vendidos}* vendidos!\n\n`;
   }
   mensagem += `🛒 *COMPRAR AGORA:*\n`;
-  mensagem += `👉 ${produto.link}\n\n`;
+  mensagem += `👉 ${produto.url_afiliado || produto.link}\n\n`;
   mensagem += `⏰ *Oferta por tempo limitado!*\n\n`;
   mensagem += `${style.tag} #Ofertas #Desconto\n`;
   mensagem += `━━━━━━━━━━━━━━━━━━`;
@@ -401,7 +495,7 @@ function gerarAlertaBugCritico(produto, plataforma) {
     const economia = (produto.preco_original - produto.preco).toFixed(2);
     mensagem += `~R$ ${produto.preco_original}~ → *R$ ${produto.preco}*\n`;
     mensagem += `💎 *ECONOMIA: R$ ${economia}*\n`;
-    if (produto.desconto) mensagem += `🔥 *${produto.desconto}% OFF*\n`;
+    if (produto.desconto) mensagem += `🔥 *${produto.desconto} OFF*\n`;
   } else {
     mensagem += `*R$ ${produto.preco}* ⚡\n`;
   }
@@ -412,14 +506,14 @@ function gerarAlertaBugCritico(produto, plataforma) {
     mensagem += `\n`;
   }
   if (produto.avaliacao) {
-    const estrelas = "⭐".repeat(Math.floor(produto.avaliacao));
+    const estrelas = "⭐".repeat(Math.min(Math.floor(produto.avaliacao), 5));
     mensagem += `${estrelas} *${produto.avaliacao}/5*`;
-    if (produto.qtd_avaliacoes || produto.num_reviews) mensagem += ` (${produto.qtd_avaliacoes || produto.num_reviews} avaliações)`;
+    if (produto.num_reviews) mensagem += ` (${produto.num_reviews} avaliações)`;
     mensagem += `\n\n`;
   }
   mensagem += `⏰ *COMPRE IMEDIATAMENTE!*\n`;
   mensagem += `⚡ *BUG PODE SER CORRIGIDO A QUALQUER MOMENTO!*\n\n`;
-  mensagem += `🛒 *LINK DIRETO:*\n👉 ${produto.link}\n\n`;
+  mensagem += `🛒 *LINK DIRETO:*\n👉 ${produto.url_afiliado || produto.link}\n\n`;
   mensagem += `🎯 *COMO COMPRAR RÁPIDO:*\n1️⃣ Clique no link agora\n2️⃣ Adicione ao carrinho\n3️⃣ Finalize RÁPIDO antes que corrijam\n\n`;
   mensagem += `⚠️ *NÃO PERCA TEMPO!*\n\n━━━━━━━━━━━━━━━━━━━━━━\n`;
   mensagem += `#BugDePreço #Urgente #CompraAgora ${style.emoji} #${style.nome.replace(" ", "")}`;
@@ -432,42 +526,76 @@ function gerarAlertaBugCritico(produto, plataforma) {
 app.get("/", (req, res) => {
   res.json({
     status:  "online",
-    versao:  "11.0 - UNIFICADO",
+    versao:  "12.0 - CORRIGIDO",
+    categorias_amazon: AMAZON_CATEGORIAS.map(c => ({ nome: c.nome, descricao: c.descricao })),
     endpoints: {
-    
       // Amazon
-      "GET /amazon":                "Busca ofertas Amazon (Playwright)",
-      "GET /bugs/amazon":           "Detecta bugs de preço (Amazon)",
-      "POST /amazon-link":          "Gera link de afiliado Amazon",
-      "POST /amazon-buscar":        "Busca produtos via Creators API",
-      "POST /amazon-produto":       "Detalhes de produto por ASIN",
-      "POST /encurtar-link":        "Encurta link Amazon (SiteStripe)",
+      "GET /amazon":                      "Busca ofertas Amazon — ?categoria=0-5 &limite=20 &min_avaliacao=4.0 &min_desconto=10",
+      "GET /amazon/categorias":           "Lista todas as categorias disponíveis",
+      "GET /bugs/amazon":                 "Detecta bugs de preço (Amazon)",
+      "POST /amazon-link":                "Gera link de afiliado Amazon",
+      "POST /amazon-buscar":              "Busca produtos via Creators API",
+      "POST /amazon-produto":             "Detalhes de produto por ASIN",
+      "POST /encurtar-link":              "Encurta link Amazon (SiteStripe)",
       // Shopee
-      "GET /shopee":                "Busca Flash Sale Shopee",
-      "GET /bugs/shopee":           "Detecta bugs de preço (Shopee)",
-      "POST /shopee-link":          "Gera link de afiliado Shopee",
+      "GET /shopee":                      "Busca Flash Sale Shopee",
+      "GET /bugs/shopee":                 "Detecta bugs de preço (Shopee)",
+      "POST /shopee-link":                "Gera link de afiliado Shopee",
       // Shein
-      "GET /shein":                 "Busca produtos Shein",
-      "GET /shein/lojas-exclusivas":"Busca lojas exclusivas Shein",
-      "GET /bugs/shein":            "Detecta bugs de preço (Shein)",
-      "POST /shein-link":           "Gera link de afiliado Shein",
+      "GET /shein":                       "Busca produtos Shein",
+      "GET /shein/lojas-exclusivas":      "Busca lojas exclusivas Shein",
+      "GET /bugs/shein":                  "Detecta bugs de preço (Shein)",
+      "POST /shein-link":                 "Gera link de afiliado Shein",
       // IA e análise
-      "POST /gerar-mensagem":       "Gera mensagem de oferta com Claude AI",
-      "POST /analisar-produtos":    "Classifica e ranqueia produtos por pontuação",
+      "POST /gerar-mensagem":             "Gera mensagem de oferta com Claude AI",
+      "POST /analisar-produtos":          "Classifica e ranqueia produtos por pontuação",
       // TikTok
-      "POST /tiktok/seguir":        "Segue um creator no TikTok"
-    },
-    lojas_exclusivas_shein: Object.keys(SHEIN_LOJAS_EXCLUSIVAS)
+      "POST /tiktok/seguir":              "Segue um creator no TikTok"
+    }
   });
 });
 
+// ============================================
+// AMAZON — LISTAR CATEGORIAS
+// ============================================
+app.get("/amazon/categorias", (req, res) => {
+  res.json({
+    status: "ok",
+    total: AMAZON_CATEGORIAS.length,
+    categorias: AMAZON_CATEGORIAS.map((c, i) => ({ indice: i, nome: c.nome, descricao: c.descricao }))
+  });
+});
 
 // ============================================
-// AMAZON — BUSCAR OFERTAS (Playwright)
+// AMAZON — BUSCAR OFERTAS (Playwright) — CORRIGIDO
+//
+// Query params:
+//   categoria    (número 0-5, ou "todas")  — padrão: rotação automática
+//   limite       (número)                  — padrão: 20
+//   min_avaliacao (número ex: 4.0)         — padrão: 4.0
+//   min_desconto  (número ex: 10)          — padrão: 0 (sem filtro mínimo)
 // ============================================
 app.get("/amazon", async (req, res) => {
   try {
-    console.log("🔄 [Amazon] Buscando ofertas...");
+    const limite       = parseInt(req.query.limite)       || 20;
+    const minAvaliacao = parseFloat(req.query.min_avaliacao) || 4.0;
+    const minDesconto  = parseFloat(req.query.min_desconto)  || 0;
+
+    // Seleciona categoria: índice fixo, "todas" ou rotação pela hora
+    let categoriasSelecionadas = [];
+    if (req.query.categoria === "todas") {
+      categoriasSelecionadas = AMAZON_CATEGORIAS;
+    } else if (req.query.categoria !== undefined) {
+      const idx = parseInt(req.query.categoria);
+      categoriasSelecionadas = [AMAZON_CATEGORIAS[idx] || AMAZON_CATEGORIAS[0]];
+    } else {
+      // Rotação automática: muda a cada hora
+      const idx = new Date().getHours() % AMAZON_CATEGORIAS.length;
+      categoriasSelecionadas = [AMAZON_CATEGORIAS[idx]];
+    }
+
+    console.log(`🔄 [Amazon] Buscando em: ${categoriasSelecionadas.map(c => c.nome).join(", ")}`);
+
     const browser = await abrirBrowser();
     const context = await browser.newContext({
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -475,46 +603,155 @@ app.get("/amazon", async (req, res) => {
       locale:    "pt-BR",
       extraHTTPHeaders: { "Accept-Language": "pt-BR,pt;q=0.9" }
     });
-    const page = await context.newPage();
-    await page.goto("https://www.amazon.com.br/s?k=casa+e+decoracao&i=home&bbn=16209062011&rh=n%3A16209062011&dc&ref=sr_nr_n_1", { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(4000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    await page.waitForTimeout(2000);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
 
-    const produtos = await page.evaluate((tag) => {
-      const items = [];
-      const cards = Array.from(document.querySelectorAll("div[data-component-type='s-search-result']"));
-      cards.forEach((card, index) => {
-        try {
-          const titulo       = card.querySelector("h2 a span, h2 span")?.textContent?.trim() || "";
-          const precoInteiro = card.querySelector(".a-price-whole")?.textContent?.replace(/[^\d]/g, "") || "0";
-          const precoFracao  = card.querySelector(".a-price-fraction")?.textContent?.replace(/[^\d]/g, "") || "00";
-          const preco        = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
-          const precoOrigTxt = card.querySelector(".a-text-price .a-offscreen")?.textContent?.trim() || "";
-          const preco_original = parseFloat(precoOrigTxt.replace(/[^\d,]/g, "").replace(",", ".")) || 0;
-          const desconto     = card.querySelector("span.a-letter-space + span, [class*='savingsPercentage']")?.textContent?.trim() || "";
-          const avaliacaoTxt = card.querySelector("span.a-icon-alt")?.textContent?.trim() || "";
-          const avaliacao    = parseFloat(avaliacaoTxt.replace(",", ".")) || 0;
-          const num_reviews  = parseInt(card.querySelector("span[aria-label*='estrelas'] + span, a[href*='customerReviews'] span")?.textContent?.replace(/[^\d]/g, "")) || 0;
-          const imagem       = card.querySelector("img.s-image")?.src || "";
-          const linkEl       = card.querySelector("h2 a, a.a-link-normal");
-          let link           = linkEl?.href || "";
-          if (link && !link.startsWith("http")) link = "https://www.amazon.com.br" + link;
-          const asin         = card.getAttribute("data-asin") || "";
-          const frete_gratis = !!card.querySelector("i[aria-label='Amazon Prime'], [data-testid*='prime']");
-          if (titulo && titulo.length > 3 && preco > 0) {
-            items.push({ titulo, preco, preco_original, desconto, avaliacao, num_reviews, imagem, link, asin, frete_gratis, url_afiliado: `https://www.amazon.com.br/dp/${asin}?tag=${tag}`, posicao: index + 1 });
-          }
-        } catch (e) {}
-      });
-      return items;
-    }, AMAZON_TAG);
+    const todosProdutos = [];
+
+    for (const categoria of categoriasSelecionadas) {
+      console.log(`   📂 Categoria: ${categoria.nome}`);
+      const page = await context.newPage();
+
+      try {
+        await page.goto(categoria.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.waitForTimeout(4000);
+
+        // Scroll progressivo para carregar mais produtos
+        for (let i = 1; i <= 4; i++) {
+          await page.evaluate((frac) => window.scrollTo(0, document.body.scrollHeight * frac), i * 0.25);
+          await page.waitForTimeout(1000);
+        }
+        await page.waitForTimeout(2000);
+
+        const produtos = await page.evaluate((tag, catNome) => {
+          const items = [];
+          const cards = Array.from(document.querySelectorAll("div[data-component-type='s-search-result']"));
+
+          cards.forEach((card, index) => {
+            try {
+              // ── Título ──────────────────────────────────────
+              const titulo = card.querySelector("h2 a span, h2 span")?.textContent?.trim() || "";
+              if (!titulo || titulo.length < 5) return;
+
+              // ── Preço atual (não riscado) ────────────────────
+              // Pega o primeiro .a-price que NÃO seja .a-text-price (que é o riscado)
+              const precoEl = card.querySelector(".a-price:not(.a-text-price)");
+              const precoInteiroTxt = precoEl?.querySelector(".a-price-whole")?.textContent?.replace(/[^\d]/g, "") || "0";
+              const precoFracaoTxt  = precoEl?.querySelector(".a-price-fraction")?.textContent?.replace(/[^\d]/g, "") || "00";
+              const preco = parseFloat(`${precoInteiroTxt}.${precoFracaoTxt}`) || 0;
+              if (preco <= 0) return;
+
+              // ── Preço original (riscado) ─────────────────────
+              const precoOrigTxt = card.querySelector(".a-text-price .a-offscreen")?.textContent?.trim() || "";
+              const preco_original_raw = parseFloat(precoOrigTxt.replace(/[^\d,]/g, "").replace(",", ".")) || 0;
+              // Sanidade: original deve ser MAIOR que atual
+              const preco_original = (preco_original_raw > preco) ? preco_original_raw : 0;
+
+              // ── Desconto ─────────────────────────────────────
+              // Tenta pegar o badge de percentual — ignora textos que não contenham %
+              let descontoTxt = "";
+              const descontoEl = card.querySelector("[class*='savingsPercentage'], .a-color-price");
+              const descontoCandidate = descontoEl?.textContent?.trim() || "";
+              if (descontoCandidate.includes("%")) {
+                descontoTxt = descontoCandidate;
+              } else if (preco_original > 0 && preco > 0) {
+                // Calcula manualmente
+                const calc = Math.round(((preco_original - preco) / preco_original) * 100);
+                if (calc > 0) descontoTxt = `-${calc}%`;
+              }
+
+              // ── Avaliação ────────────────────────────────────
+              const avaliacaoTxt = card.querySelector("span.a-icon-alt")?.textContent?.trim() || "";
+              // "4,5 de 5 estrelas" → 4.5
+              const avaliacao = parseFloat(avaliacaoTxt.split(" ")[0].replace(",", ".")) || 0;
+
+              // ── Número de avaliações ─────────────────────────
+              const reviewsEl  = card.querySelector("a[href*='customerReviews'] span, span[aria-label*='avalia']");
+              const num_reviews = parseInt(reviewsEl?.textContent?.replace(/[^\d]/g, "") || "0") || 0;
+
+              // ── Outros campos ─────────────────────────────────
+              const imagem = card.querySelector("img.s-image")?.src || "";
+              const linkEl = card.querySelector("h2 a");
+              let link     = linkEl?.href || "";
+              if (link && !link.startsWith("http")) link = "https://www.amazon.com.br" + link;
+              const asin   = card.getAttribute("data-asin") || "";
+              const frete_gratis = !!(
+                card.querySelector("i[aria-label*='Prime'], [aria-label*='Prime'], [data-testid*='prime']") ||
+                card.querySelector(".s-prime")
+              );
+              const mais_vendido = !!(card.querySelector("[aria-label*='mais vendido'], [class*='best-seller'], span[class*='bestseller']"));
+
+              items.push({
+                titulo,
+                preco,
+                preco_original,
+                desconto: descontoTxt,
+                avaliacao,
+                num_reviews,
+                imagem,
+                link,
+                asin,
+                frete_gratis,
+                mais_vendido,
+                url_afiliado: asin ? `https://www.amazon.com.br/dp/${asin}?tag=${tag}` : link,
+                categoria: catNome,
+                posicao: index + 1
+              });
+            } catch (e) { /* ignora card com erro */ }
+          });
+
+          return items;
+        }, AMAZON_TAG, categoria.nome);
+
+        todosProdutos.push(...produtos);
+        console.log(`   ✅ ${produtos.length} produtos extraídos de "${categoria.nome}"`);
+      } catch (err) {
+        console.error(`   ❌ Erro na categoria "${categoria.nome}":`, err.message);
+      } finally {
+        await page.close();
+      }
+    }
 
     await browser.close();
-    console.log(`✅ [Amazon] ${produtos.length} produtos extraídos`);
-    res.json({ status: "ok", total: produtos.length, data_extracao: new Date().toISOString(), produtos });
+
+    // ── Filtros de qualidade ──────────────────────────
+    const filtrados = todosProdutos.filter(p => {
+      if (p.avaliacao > 0 && p.avaliacao < minAvaliacao) return false;
+      if (minDesconto > 0) {
+        const descNum = parseFloat((p.desconto || "").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+        if (descNum < minDesconto) return false;
+      }
+      return true;
+    });
+
+    // ── Pontuação e ordenação ─────────────────────────
+    const comPontuacao = filtrados.map(p => {
+      const pontuacao     = calcularPontuacaoProduto(p);
+      const classificacao = classificarProduto(pontuacao);
+      return { ...p, pontuacao, classificacao: classificacao.nivel, emoji_qualidade: classificacao.emoji };
+    });
+
+    // Remove duplicatas pelo ASIN
+    const vistos = new Set();
+    const unicos = comPontuacao.filter(p => {
+      if (!p.asin || vistos.has(p.asin)) return false;
+      vistos.add(p.asin);
+      return true;
+    });
+
+    unicos.sort((a, b) => b.pontuacao - a.pontuacao);
+    const resultado = unicos.slice(0, limite);
+
+    console.log(`✅ [Amazon] ${resultado.length} produtos após filtros (avaliação ≥ ${minAvaliacao}, desconto ≥ ${minDesconto}%)`);
+
+    res.json({
+      status:          "ok",
+      total:           resultado.length,
+      total_bruto:     todosProdutos.length,
+      filtros_aplicados: { min_avaliacao: minAvaliacao, min_desconto: minDesconto },
+      categorias_buscadas: categoriasSelecionadas.map(c => c.nome),
+      data_extracao:   new Date().toISOString(),
+      produtos:        resultado
+    });
+
   } catch (error) {
     console.error("❌ [Amazon] Erro:", error.message);
     res.status(500).json({ status: "erro", mensagem: error.message });
@@ -527,8 +764,12 @@ app.get("/amazon", async (req, res) => {
 app.get("/bugs/amazon", async (req, res) => {
   try {
     const browser = await abrirBrowser();
-    const context = await browser.newContext({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", viewport: { width: 1920, height: 1080 }, locale: "pt-BR" });
-    const page    = await context.newPage();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      viewport:  { width: 1920, height: 1080 },
+      locale:    "pt-BR"
+    });
+    const page = await context.newPage();
     await page.goto("https://www.amazon.com.br/deals", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(4000);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -539,18 +780,31 @@ app.get("/bugs/amazon", async (req, res) => {
       const cards = Array.from(document.querySelectorAll("div[data-component-type='s-search-result'], div[class*='DealCard']"));
       cards.forEach((card, i) => {
         try {
-          const titulo       = card.querySelector("h2 a span, h2 span, [class*='title']")?.textContent?.trim() || "";
-          const precoInteiro = card.querySelector(".a-price-whole")?.textContent?.replace(/[^\d]/g, "") || "0";
-          const precoFracao  = card.querySelector(".a-price-fraction")?.textContent?.replace(/[^\d]/g, "") || "00";
-          const preco        = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
-          const precoOrigTxt = card.querySelector(".a-text-price .a-offscreen")?.textContent?.trim() || "";
-          const preco_original = parseFloat(precoOrigTxt.replace(/[^\d,]/g, "").replace(",", ".")) || 0;
-          const desconto     = card.querySelector("[class*='savingsPercentage'], span.a-letter-space + span")?.textContent?.trim() || "";
-          const avaliacao    = parseFloat(card.querySelector("span.a-icon-alt")?.textContent?.replace(",", ".")) || 0;
-          const asin         = card.getAttribute("data-asin") || "";
-          const link         = asin ? `https://www.amazon.com.br/dp/${asin}?tag=${tag}` : (card.querySelector("h2 a")?.href || "");
-          const imagem       = card.querySelector("img.s-image, img")?.src || "";
-          if (titulo && preco > 0) items.push({ titulo, preco, preco_original, desconto, avaliacao, link, imagem, posicao: i + 1 });
+          const titulo = card.querySelector("h2 a span, h2 span, [class*='title']")?.textContent?.trim() || "";
+
+          const precoEl = card.querySelector(".a-price:not(.a-text-price)");
+          const precoInteiro = precoEl?.querySelector(".a-price-whole")?.textContent?.replace(/[^\d]/g, "") || "0";
+          const precoFracao  = precoEl?.querySelector(".a-price-fraction")?.textContent?.replace(/[^\d]/g, "") || "00";
+          const preco = parseFloat(`${precoInteiro}.${precoFracao}`) || 0;
+
+          const precoOrigTxt   = card.querySelector(".a-text-price .a-offscreen")?.textContent?.trim() || "";
+          const preco_original_raw = parseFloat(precoOrigTxt.replace(/[^\d,]/g, "").replace(",", ".")) || 0;
+          const preco_original = (preco_original_raw > preco) ? preco_original_raw : 0;
+
+          let descontoTxt = "";
+          const descontoCandidate = card.querySelector("[class*='savingsPercentage']")?.textContent?.trim() || "";
+          if (descontoCandidate.includes("%")) {
+            descontoTxt = descontoCandidate;
+          } else if (preco_original > 0) {
+            descontoTxt = `-${Math.round(((preco_original - preco) / preco_original) * 100)}%`;
+          }
+
+          const avaliacao = parseFloat(card.querySelector("span.a-icon-alt")?.textContent?.split(" ")[0].replace(",", ".")) || 0;
+          const asin      = card.getAttribute("data-asin") || "";
+          const link      = asin ? `https://www.amazon.com.br/dp/${asin}?tag=${tag}` : (card.querySelector("h2 a")?.href || "");
+          const imagem    = card.querySelector("img.s-image, img")?.src || "";
+
+          if (titulo && preco > 0) items.push({ titulo, preco, preco_original, desconto: descontoTxt, avaliacao, link, imagem, posicao: i + 1 });
         } catch (e) {}
       });
       return items;
@@ -566,7 +820,7 @@ app.get("/bugs/amazon", async (req, res) => {
 });
 
 // ============================================
-// AMAZON — LINKS DE AFILIADO
+// AMAZON — LINK DE AFILIADO
 // ============================================
 app.post("/amazon-link", async (req, res) => {
   try {
@@ -575,8 +829,8 @@ app.post("/amazon-link", async (req, res) => {
     if (!url.includes("amazon.com.br") && !url.includes("amzn.to")) {
       return res.status(400).json({ status: "erro", mensagem: "URL inválida — deve ser da Amazon Brasil" });
     }
-    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
-    const asin      = asinMatch ? (asinMatch[1] || asinMatch[2]) : "";
+    const asinMatch   = url.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
+    const asin        = asinMatch ? (asinMatch[1] || asinMatch[2]) : "";
     const urlAfiliado = asin
       ? `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_TAG}`
       : (url.includes("?") ? `${url}&tag=${AMAZON_TAG}` : `${url}?tag=${AMAZON_TAG}`);
@@ -586,26 +840,30 @@ app.post("/amazon-link", async (req, res) => {
   }
 });
 
+// ============================================
+// AMAZON — ENCURTAR LINK (SiteStripe)
+// ============================================
 app.post("/encurtar-link", async (req, res) => {
   const { asin } = req.body;
   if (!asin) return res.status(400).json({ status: "erro", mensagem: "ASIN obrigatório" });
+
   const browser = await abrirBrowser();
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     extraHTTPHeaders: { "Accept-Language": "pt-BR,pt;q=0.9" }
   });
   await context.addCookies([
-    { name: "session-id",  value: "132-2538792-9842543",  domain: ".amazon.com.br", path: "/" },
-    { name: "ubid-acbbr", value: "134-1696896-9118130",   domain: ".amazon.com.br", path: "/" },
-    { name: "lc-acbbr",   value: "pt_BR",                 domain: ".amazon.com.br", path: "/" },
-    { name: "i18n-prefs", value: "BRL",                   domain: ".amazon.com.br", path: "/" }
+    { name: "session-id",  value: "132-2538792-9842543", domain: ".amazon.com.br", path: "/" },
+    { name: "ubid-acbbr", value: "134-1696896-9118130",  domain: ".amazon.com.br", path: "/" },
+    { name: "lc-acbbr",   value: "pt_BR",                domain: ".amazon.com.br", path: "/" },
+    { name: "i18n-prefs", value: "BRL",                  domain: ".amazon.com.br", path: "/" }
   ]);
   const page = await context.newPage();
   try {
     const url = `https://www.amazon.com.br/associates/sitestripe/getShortUrl?asin=${asin}&tag=${AMAZON_TAG}&linkType=text`;
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
     const bodyText = await page.textContent("body");
-    const json = JSON.parse(bodyText);
+    const json     = JSON.parse(bodyText);
     await browser.close();
     if (json?.shortUrl) return res.json({ status: "ok", url_curta: json.shortUrl, asin });
     return res.json({ status: "erro", mensagem: "Link não gerado", resposta: json });
@@ -616,7 +874,7 @@ app.post("/encurtar-link", async (req, res) => {
 });
 
 // ============================================
-// AMAZON — CREATORS API
+// AMAZON — CREATORS API: BUSCAR PRODUTOS
 // ============================================
 app.post("/amazon-buscar", async (req, res) => {
   try {
@@ -626,30 +884,36 @@ app.post("/amazon-buscar", async (req, res) => {
     const payload = {
       keywords, partnerTag: AMAZON_TAG, partnerType: "Associates", searchIndex: categoria,
       itemPage: pagina, itemCount: 10,
-      resources: ["itemInfo.title", "itemInfo.byLineInfo", "offersV2.listings.price", "offersV2.listings.condition", "images.primary.medium", "customerReviews.count", "customerReviews.starRating", "itemInfo.features"],
+      resources: [
+        "itemInfo.title", "itemInfo.byLineInfo",
+        "offersV2.listings.price", "offersV2.listings.condition",
+        "images.primary.medium",
+        "customerReviews.count", "customerReviews.starRating",
+        "itemInfo.features"
+      ],
       marketplace: "www.amazon.com.br", languagesOfPreference: ["pt_BR"]
     };
     const response = await fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/searchitems", {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "x-marketplace": "www.amazon.com.br" },
-      body:   JSON.stringify(payload)
+      body:    JSON.stringify(payload)
     });
     if (!response.ok) {
       const erro = await response.text();
       return res.status(response.status).json({ status: "erro", mensagem: `Erro na Creators API: ${response.status}`, detalhe: erro });
     }
-    const data    = await response.json();
+    const data     = await response.json();
     const produtos = (data.SearchResult?.Items || []).map((item, index) => ({
-      asin:           item.ASIN || "",
-      titulo:         item.ItemInfo?.Title?.DisplayValue || "",
-      preco:          item.OffersV2?.Listings?.[0]?.Price?.Amount || 0,
-      moeda:          item.OffersV2?.Listings?.[0]?.Price?.Currency || "BRL",
-      preco_formatado:item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || "",
-      imagem:         item.Images?.Primary?.Medium?.URL || "",
-      avaliacao:      item.CustomerReviews?.StarRating?.Value || 0,
-      num_reviews:    item.CustomerReviews?.Count || 0,
-      url_afiliado:   `https://www.amazon.com.br/dp/${item.ASIN}?tag=${AMAZON_TAG}`,
-      posicao:        index + 1
+      asin:            item.ASIN || "",
+      titulo:          item.ItemInfo?.Title?.DisplayValue || "",
+      preco:           item.OffersV2?.Listings?.[0]?.Price?.Amount || 0,
+      moeda:           item.OffersV2?.Listings?.[0]?.Price?.Currency || "BRL",
+      preco_formatado: item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || "",
+      imagem:          item.Images?.Primary?.Medium?.URL || "",
+      avaliacao:       item.CustomerReviews?.StarRating?.Value || 0,
+      num_reviews:     item.CustomerReviews?.Count || 0,
+      url_afiliado:    `https://www.amazon.com.br/dp/${item.ASIN}?tag=${AMAZON_TAG}`,
+      posicao:         index + 1
     }));
     res.json({ status: "ok", keywords, total: produtos.length, pagina, data_extracao: new Date().toISOString(), produtos });
   } catch (error) {
@@ -657,6 +921,9 @@ app.post("/amazon-buscar", async (req, res) => {
   }
 });
 
+// ============================================
+// AMAZON — CREATORS API: DETALHE POR ASIN
+// ============================================
 app.post("/amazon-produto", async (req, res) => {
   try {
     const { asin } = req.body;
@@ -664,13 +931,18 @@ app.post("/amazon-produto", async (req, res) => {
     const token   = await getCreatorsToken();
     const payload = {
       itemIds: [asin], partnerTag: AMAZON_TAG, partnerType: "Associates",
-      resources: ["itemInfo.title", "itemInfo.byLineInfo", "itemInfo.features", "offersV2.listings.price", "offersV2.listings.condition", "offersV2.listings.deliveryInfo.isPrimeEligible", "images.primary.large", "customerReviews.count", "customerReviews.starRating"],
+      resources: [
+        "itemInfo.title", "itemInfo.byLineInfo", "itemInfo.features",
+        "offersV2.listings.price", "offersV2.listings.condition", "offersV2.listings.deliveryInfo.isPrimeEligible",
+        "images.primary.large",
+        "customerReviews.count", "customerReviews.starRating"
+      ],
       marketplace: "www.amazon.com.br", languagesOfPreference: ["pt_BR"]
     };
     const response = await fetch("https://affiliate-program.amazon.com/creatorapi/paapi5/getitems", {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "x-marketplace": "www.amazon.com.br" },
-      body:   JSON.stringify(payload)
+      body:    JSON.stringify(payload)
     });
     if (!response.ok) {
       const erro = await response.text();
@@ -680,7 +952,8 @@ app.post("/amazon-produto", async (req, res) => {
     const item = data.ItemsResult?.Items?.[0];
     if (!item) return res.json({ status: "aviso", mensagem: "Produto não encontrado", asin });
     res.json({
-      status: "ok", asin,
+      status:          "ok",
+      asin,
       titulo:          item.ItemInfo?.Title?.DisplayValue || "",
       preco:           item.OffersV2?.Listings?.[0]?.Price?.Amount || 0,
       preco_formatado: item.OffersV2?.Listings?.[0]?.Price?.DisplayAmount || "",
@@ -901,7 +1174,7 @@ app.get("/shein/lojas-exclusivas", async (req, res) => {
       { name: "memberId",        value: SHEIN_MEMBER_ID, domain: ".shein.com", path: "/" },
       { name: "sessionID_shein", value: "s%3A7S7sthaovE_Sy9eCpmLnzrOlwWc0Fwmi.37UHrLYj4Eq6Bfxhb4gOBJOuPly4kkpD32FjScputO4", domain: ".shein.com", path: "/" }
     ]);
-    const page = await context.newPage();
+    const page  = await context.newPage();
     const todos = [];
     const lojasParaBuscar = loja === "todas"
       ? Object.entries(SHEIN_LOJAS_EXCLUSIVAS)
@@ -961,7 +1234,15 @@ app.get("/shein/lojas-exclusivas", async (req, res) => {
     });
     comPontuacao.sort((a, b) => b.pontuacao - a.pontuacao);
     const resultado = comPontuacao.slice(0, parseInt(limite));
-    res.json({ status: "ok", plataforma: "shein", lojas_buscadas: loja === "todas" ? Object.keys(SHEIN_LOJAS_EXCLUSIVAS) : [loja], total_encontrados: todos.length, total_retornados: resultado.length, data_extracao: new Date().toISOString(), produtos: resultado });
+    res.json({
+      status:            "ok",
+      plataforma:        "shein",
+      lojas_buscadas:    loja === "todas" ? Object.keys(SHEIN_LOJAS_EXCLUSIVAS) : [loja],
+      total_encontrados: todos.length,
+      total_retornados:  resultado.length,
+      data_extracao:     new Date().toISOString(),
+      produtos:          resultado
+    });
   } catch (error) {
     console.error("[Shein] Erro:", error);
     res.status(500).json({ status: "erro", mensagem: error.message });
@@ -1016,7 +1297,9 @@ app.post("/shein-link", async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) return res.status(400).json({ status: "erro", mensagem: "URL não fornecida" });
-    const affiliateUrl = SHEIN_MEMBER_ID ? `${url}?url=${encodeURIComponent(url)}&ref=memberId:${SHEIN_MEMBER_ID}` : url;
+    const affiliateUrl = SHEIN_MEMBER_ID
+      ? `${url}?url=${encodeURIComponent(url)}&ref=memberId:${SHEIN_MEMBER_ID}`
+      : url;
     res.json({ status: "ok", url_original: url, url_afiliado: affiliateUrl, member_id: SHEIN_MEMBER_ID });
   } catch (error) {
     res.status(500).json({ status: "erro", mensagem: error.message });
@@ -1054,7 +1337,14 @@ app.post("/analisar-produtos", async (req, res) => {
     const filtrados = analisados.filter(p => p.pontuacao >= min_pontuacao);
     filtrados.sort((a, b) => b.pontuacao - a.pontuacao);
     const topPicks = filtrados.slice(0, limite);
-    res.json({ status: "ok", total_analisados: produtos.length, total_qualificados: filtrados.length, total_retornados: topPicks.length, min_pontuacao, produtos: topPicks });
+    res.json({
+      status:              "ok",
+      total_analisados:    produtos.length,
+      total_qualificados:  filtrados.length,
+      total_retornados:    topPicks.length,
+      min_pontuacao,
+      produtos:            topPicks
+    });
   } catch (error) {
     res.status(500).json({ status: "erro", mensagem: error.message });
   }
@@ -1097,7 +1387,6 @@ app.post("/tiktok/seguir", async (req, res) => {
   }
 });
 
-
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
@@ -1106,6 +1395,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`📦 Plataformas: ML | Amazon | Shopee | Shein | TikTok`);
   console.log(`🤖 Claude AI: ${CLAUDE_API_KEY ? "CONFIGURADO ✅" : "NÃO CONFIGURADO ⚠️"}`);
+  console.log(`🛍️  Categorias Amazon: ${AMAZON_CATEGORIAS.length} disponíveis`);
   console.log(`🏪 Lojas Shein: ${Object.keys(SHEIN_LOJAS_EXCLUSIVAS).length} disponíveis`);
   console.log(`🔗 http://localhost:${PORT}`);
 });
