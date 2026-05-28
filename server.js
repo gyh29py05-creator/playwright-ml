@@ -1,4 +1,3 @@
-cat > /tmp/server_new.js << 'EOF'
 // ============================================
 // IMPORTS E CONFIGURAÇÃO INICIAL
 // ============================================
@@ -717,9 +716,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor v9.0 Anti-Bot rodando na porta ${PORT}`);
 });
-EOF
-cp /tmp/server_new.js /mnt/user-data/outputs/server.js
-echo "Arquivo copiado! $(wc -l < /mnt/user-data/outputs/server.js) linhas"
-Saída
-
-Arquivo copiado! 718 linhas
